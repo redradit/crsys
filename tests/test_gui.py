@@ -8,6 +8,7 @@ answer on the user's behalf.
 from __future__ import annotations
 
 import contextlib
+import io
 import os
 import tempfile
 import time
@@ -1029,6 +1030,147 @@ class TestIdentityPanelActions(GuiTestCase):
         row._leave()
         self.assertEqual(row.cget("fg_color"), "transparent")
         self.assertNotEqual(hovered, "transparent")
+
+
+class TestAppPlumbing(GuiTestCase):
+    """The application's own decision points, not any one panel's.
+
+    ask_unlock is the gate that decides whether a passphrase is demanded at all,
+    and keypair() is what the worker thread calls to obtain a private key. Both
+    were reached only through the happy path, which never exercised the branches
+    that decide *not* to ask.
+    """
+
+    def _refuse_to_prompt(self):
+        """Install a passphrase dialog that fails the test if it is called."""
+        def forbidden(*a, **k):
+            raise AssertionError("a passphrase was requested when none was needed")
+        self.dialogs.ask_passphrase = forbidden
+
+    # ------------------------------------------------------------ ask_unlock
+
+    def test_unlock_not_asked_when_already_unlocked(self):
+        self.assertTrue(self.app.keyring.is_unlocked("alice"))
+        self._refuse_to_prompt()
+        self.assertEqual(self.app.ask_unlock("alice"), (True, None))
+
+    def test_unlock_not_asked_for_an_unencrypted_key(self):
+        """A key stored without a passphrase must not produce a prompt."""
+        self.app.keyring.create("plainkey", "Plain", None)
+        self.app.keyring.lock("plainkey")
+        self.app.refresh_identities()
+        try:
+            self.assertFalse(self.app.keyring.get("plainkey").encrypted)
+            self._refuse_to_prompt()
+            self.assertEqual(self.app.ask_unlock("plainkey"), (True, None))
+        finally:
+            self.app.keyring.delete("plainkey")
+            self.app.refresh_identities()
+
+    def test_unlock_refused_for_an_unknown_identity(self):
+        proceed, passphrase = self.app.ask_unlock("nobody")
+        self.assertFalse(proceed)
+        self.assertIsNone(passphrase)
+        self.assertTrue(self.errors)
+        self.assertIn("Key unavailable", self.errors[0][0])
+
+    def test_unlock_refused_for_a_public_only_identity(self):
+        """Encrypting to someone does not mean you can unlock as them."""
+        self.app.keyring.import_public(
+            KeyPair.generate().public_key.to_compact(), "theironly")
+        self.app.refresh_identities()
+        try:
+            proceed, passphrase = self.app.ask_unlock("theironly")
+            self.assertFalse(proceed)
+            self.assertIsNone(passphrase)
+            self.assertTrue(self.errors)
+        finally:
+            self.app.keyring.delete("theironly")
+            self.app.refresh_identities()
+
+    def test_unlock_returns_the_encoded_passphrase(self):
+        self.app.keyring.lock("alice")
+        try:
+            self.dialogs.ask_passphrase = lambda *a, **k: "pässwörd"
+            proceed, passphrase = self.app.ask_unlock("alice")
+            self.assertTrue(proceed)
+            self.assertEqual(passphrase, "pässwörd".encode("utf-8"))
+        finally:
+            self.app.keyring.unlock("alice", b"pw")
+
+    # -------------------------------------------------------------- keypair
+
+    def test_keypair_uses_the_cache_without_a_passphrase(self):
+        cached = self.app.keyring.cached("alice")
+        self.assertIsNotNone(cached)
+        self.assertIs(self.app.keypair("alice", None), cached)
+
+    def test_keypair_derives_on_a_cache_miss(self):
+        """The worker-thread path when the key was locked at dispatch time."""
+        original = self.app.keyring.cached("alice").secret_bytes()
+        self.app.keyring.lock("alice")
+        self.assertIsNone(self.app.keyring.cached("alice"))
+        keypair = self.app.keypair("alice", b"pw")
+        self.assertEqual(keypair.secret_bytes(), original)
+        self.assertTrue(self.app.keyring.is_unlocked("alice"))
+
+    def test_keypair_rejects_a_wrong_passphrase(self):
+        self.app.keyring.lock("alice")
+        try:
+            with self.assertRaises(PassphraseError):
+                self.app.keypair("alice", b"definitely-not-it")
+        finally:
+            self.app.keyring.unlock("alice", b"pw")
+
+    # ------------------------------------------------------------------ run
+
+    def test_a_second_operation_is_refused_while_one_is_running(self):
+        """The guard that stops two crypto jobs racing on the same widgets."""
+        import threading
+
+        release = threading.Event()
+        finished = []
+        self.app.run(lambda _r: release.wait(10), lambda _r: finished.append(True),
+                     "first failed")
+        try:
+            self.assertTrue(self.app.tasks.busy)
+            started = []
+            self.app.run(lambda _r: started.append(True), None, "second failed")
+            self.assertEqual(started, [], "a second job was allowed to start")
+            self.assertIn("already running", self.app.status._label.cget("text"))
+        finally:
+            release.set()
+        self.assertTrue(_pump(self.app, lambda: finished))
+
+    def test_an_unexpected_exception_is_surfaced_with_its_type(self):
+        """CrsysError shows its message; anything else must name the class too.
+
+        run() also prints the traceback to stderr for unexpected exceptions,
+        which is the right behaviour and useless noise in a test run: a suite
+        that always prints a traceback teaches you to ignore tracebacks. It is
+        captured here so that a stray one still means something.
+        """
+        reported = []
+        noise = io.StringIO()
+        with contextlib.redirect_stderr(noise):
+            self.app.run(lambda _r: 1 / 0, lambda _r: None, "job failed",
+                         on_fail=reported.append)
+            self.assertTrue(_pump(self.app, lambda: reported))
+        self.assertIn("ZeroDivisionError", reported[0])
+        self.assertIn("job failed", self.app.status._label.cget("text"))
+        self.assertIn("ZeroDivisionError", noise.getvalue(),
+                      "the traceback should still have been written to stderr")
+
+    def test_a_failure_without_a_handler_reaches_a_dialog(self):
+        from crsys.errors import CrsysError
+
+        def boom(_report):
+            raise CrsysError("something went wrong")
+
+        self.app.run(boom, lambda _r: None, "job failed")
+        self.assertTrue(_pump(self.app, lambda: self.errors))
+        self.assertEqual(self.errors[0][0], "job failed")
+        self.assertIn("something went wrong", self.errors[0][1])
 
 
 class TestInterfaceSecurity(GuiTestCase):

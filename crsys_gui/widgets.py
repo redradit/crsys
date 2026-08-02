@@ -57,7 +57,7 @@ class FilePicker(ctk.CTkFrame):
         self._entry = ctk.CTkEntry(self, placeholder_text="No file selected")
         self._entry.pack(side="left", fill="x", expand=True)
         if on_change:
-            self._entry.bind("<KeyRelease>", lambda _e: on_change())
+            self._entry.bind("<KeyRelease>", lambda _e=None: on_change())
         ctk.CTkButton(self, text="Browse…", width=90, command=self._browse
                       ).pack(side="left", padx=(theme.PAD_S, 0))
 

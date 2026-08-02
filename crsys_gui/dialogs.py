@@ -24,7 +24,7 @@ class _Modal(ctk.CTkToplevel):
         self.resizable(False, False)
         self.transient(parent)
         self.protocol("WM_DELETE_WINDOW", self._cancel)
-        self.bind("<Escape>", lambda _e: self._cancel())
+        self.bind("<Escape>", lambda _e=None: self._cancel())
 
         parent.update_idletasks()
         x = parent.winfo_rootx() + (parent.winfo_width() - width) // 2
@@ -68,14 +68,14 @@ class PassphraseDialog(_Modal):
         self._entry = ctk.CTkEntry(frame, show="•", width=420,
                                    placeholder_text="Passphrase")
         self._entry.pack(fill="x")
-        self._entry.bind("<Return>", lambda _e: self._ok())
+        self._entry.bind("<Return>", lambda _e=None: self._ok())
 
         self._entry2 = None
         if confirm:
             self._entry2 = ctk.CTkEntry(frame, show="•", width=420,
                                         placeholder_text="Repeat the passphrase")
             self._entry2.pack(fill="x", pady=(theme.PAD_S, 0))
-            self._entry2.bind("<Return>", lambda _e: self._ok())
+            self._entry2.bind("<Return>", lambda _e=None: self._ok())
 
         self._error = ctk.CTkLabel(frame, text="", text_color=theme.ERROR_FG,
                                    font=ctk.CTkFont(size=theme.SMALL_SIZE))
@@ -202,7 +202,7 @@ class NameDialog(_Modal):
 
         self._entry = ctk.CTkEntry(frame, placeholder_text="bob")
         self._entry.pack(fill="x", pady=(theme.PAD_S, 0))
-        self._entry.bind("<Return>", lambda _e: self._ok())
+        self._entry.bind("<Return>", lambda _e=None: self._ok())
 
         self._error = ctk.CTkLabel(frame, text="", text_color=theme.ERROR_FG,
                                    wraplength=400, justify="left",

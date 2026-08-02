@@ -23,6 +23,7 @@ MODULES = [
     "test_container",
     "test_tamper",
     "test_signing",
+    "test_streaming",
     "test_vectors",
     "test_fuzz",
     "test_cli",

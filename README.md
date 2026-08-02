@@ -228,7 +228,7 @@ to 1.0; they are separate namespaces on purpose.
 python tests/run_all.py
 ```
 
-227 tests, about 20 seconds; 93% coverage of the library and 90% overall. Beyond
+243 tests, about 25 seconds; 93% coverage of the library and 90% overall. Beyond
 the happy paths they cover:
 
 - **every single bit** of a container flipped (3 bits per byte, at every
@@ -241,6 +241,11 @@ the happy paths they cover:
 - hostile headers: zero recipients, 60000 recipients, absurd `chunk_size`,
   future version, unknown suite and flags, malformed length prefixes;
 - wrong passphrase, KDF parameter downgrade, corrupted key file;
+- **that file encryption really streams.** Peak allocation is measured at two
+  file sizes and must not grow with them — a claim about memory is not something
+  correctness tests can catch, since a version that reads the whole file into
+  RAM produces exactly the right ciphertext. Measured flat at ~515 KiB for
+  encryption and ~580 KiB for decryption from 1 MiB to 64 MiB of input;
 - the full CLI path including exit codes, pipe mode and the automation
   passphrase sources;
 - **frozen wire-format vectors** (`tests/vectors.json`) that pin the container

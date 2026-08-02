@@ -34,7 +34,7 @@ class IdentityRow(ctk.CTkFrame):
         detail.pack(fill="x", padx=theme.PAD_S, pady=(0, theme.PAD_S))
 
         for widget in (self, name, detail):
-            widget.bind("<Button-1>", lambda _e, n=identity.name: on_click(n))
+            widget.bind("<Button-1>", lambda _e=None, n=identity.name: on_click(n))
             widget.bind("<Enter>", self._enter)
             widget.bind("<Leave>", self._leave)
 
@@ -290,7 +290,7 @@ class IdentitiesPanel(Panel):
                           fg_color="transparent",
                           command=lambda a=action: choose(a)).pack(padx=4, pady=2)
 
-        menu.bind("<FocusOut>", lambda _e: menu.destroy())
+        menu.bind("<FocusOut>", lambda _e=None: menu.destroy())
         menu.after(120, menu.focus_force)
 
     def _import_public(self) -> None:
