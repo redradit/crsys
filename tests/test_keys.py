@@ -10,7 +10,12 @@ from _ctx import CheapKdf, cheap_params
 
 from crsys import KeyPair, PublicKey, format_fingerprint, parse_fingerprint
 from crsys.errors import FormatError, PassphraseError
-from crsys.keys import PRIVATE_BEGIN, PUBLIC_BEGIN, check_shared_secret
+from crsys.keys import (
+    PRIVATE_BEGIN,
+    PUBLIC_BEGIN,
+    check_shared_secret,
+    restrict_to_owner,
+)
 
 
 class TestFingerprint(unittest.TestCase):
@@ -157,6 +162,76 @@ class TestSharedSecretValidation(unittest.TestCase):
                 # If it was accepted, it must at least not be degenerate.
                 self.assertTrue(any(shared),
                                 "accepted a point yielding an all-zero secret")
+
+
+class TestFilePermissions(unittest.TestCase):
+    """Narrowing a key file's permissions must never lock its owner out.
+
+    The first version of this passed the bare account name to icacls. On a
+    machine whose hostname matches the account name that resolved to a malformed
+    principal, so the ACL granted access to nobody and stripped everyone else --
+    icacls reported success and the private key became unreadable to the person
+    who had just created it. For a private key that loss is not recoverable.
+    """
+
+    def test_a_saved_key_is_still_readable_by_its_owner(self):
+        with CheapKdf(), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "id.key")
+            key = KeyPair.generate()
+            key.save(path, b"pw")
+            # The assertion that would have caught the lockout.
+            self.assertEqual(KeyPair.load(path, b"pw").secret_bytes(),
+                             key.secret_bytes())
+            with open(path, "rb") as fh:
+                self.assertTrue(fh.read())
+
+    def test_save_reports_whether_it_could_restrict(self):
+        with CheapKdf(), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "id.key")
+            self.assertIs(KeyPair.generate().save(path, b"pw"), True)
+
+    def test_restricting_a_missing_file_fails_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(restrict_to_owner(os.path.join(tmp, "absent.key")))
+
+    def test_restriction_is_idempotent(self):
+        """Rewriting a key -- changing its passphrase -- must not lock it out."""
+        with CheapKdf(), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "id.key")
+            key = KeyPair.generate()
+            for passphrase in (b"one", b"two", b"three"):
+                self.assertTrue(key.save(path, passphrase))
+                self.assertEqual(KeyPair.load(path, passphrase).secret_bytes(),
+                                 key.secret_bytes())
+
+    @unittest.skipIf(os.name == "nt", "POSIX mode bits")
+    def test_posix_mode_is_owner_only(self):
+        with CheapKdf(), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "id.key")
+            KeyPair.generate().save(path, b"pw")
+            self.assertEqual(os.stat(path).st_mode & 0o077, 0,
+                             "group or other can read the private key")
+
+    @unittest.skipUnless(os.name == "nt", "Windows ACLs")
+    def test_windows_acl_drops_inherited_entries(self):
+        import subprocess
+
+        with CheapKdf(), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "id.key")
+            KeyPair.generate().save(path, b"pw")
+            listing = subprocess.run(["icacls", path], capture_output=True,
+                                     text=True).stdout
+            # "(I)" marks an inherited entry; after /inheritance:r none remain.
+            self.assertNotIn("(I)", listing,
+                             "inherited permissions survived on a private key")
+
+    def test_public_keys_are_not_restricted(self):
+        """A public key is meant to be handed out; locking it down helps nobody."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "id.pub")
+            key = KeyPair.generate().public_key
+            key.save(path)
+            self.assertEqual(PublicKey.load(path), key)
 
 
 class TestPrivateKeyFile(unittest.TestCase):

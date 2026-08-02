@@ -104,7 +104,7 @@ def cmd_keygen(args) -> int:
         raise CrsysError("empty passphrase: pass --no-passphrase if that is intended")
 
     keypair = KeyPair.generate(comment=args.comment or "")
-    keypair.save(priv_path, passphrase)
+    restricted = keypair.save(priv_path, passphrase)
     keypair.public_key.save(pub_path)
 
     print("Private key : %s%s" % (priv_path, "" if passphrase else "  (UNENCRYPTED)"))
@@ -115,6 +115,12 @@ def cmd_keygen(args) -> int:
         print(
             "\nWARNING: the private key is stored in the clear. Anyone who can read\n"
             "%s can decrypt all of your messages." % priv_path,
+            file=sys.stderr,
+        )
+    if not restricted:
+        print(
+            "\nWARNING: could not restrict %s to your account. The key is saved and\n"
+            "usable, but its permissions are whatever the folder allows." % priv_path,
             file=sys.stderr,
         )
     return EXIT_OK

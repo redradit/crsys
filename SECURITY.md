@@ -129,9 +129,20 @@ Honest list of things a reviewer would flag:
    time can reveal which recipient you are to a local observer. Comparisons of
    secret values do use constant-time primitives.
 
-4. **File permissions are advisory on Windows.** Private key files are created
-   with mode `0600`, which is meaningful on POSIX. On Windows the file inherits
-   the directory ACL, so protection amounts to your user profile's permissions.
+4. **File permissions are enforced, but verify them if it matters to you.**
+   Private key files are created with mode `0600` on POSIX. On Windows that
+   would be nearly meaningless — `os.chmod` only toggles the read-only flag — so
+   the ACL is rewritten with `icacls` to drop inheritance and grant the creating
+   account alone. The account is identified by SID rather than by name, because
+   a name can be ambiguous, and the result is proven by reading the file back
+   and rolled back if that fails: a key nobody can open would be worse than one
+   whose permissions are merely wide. `keygen` says so explicitly when the file
+   could not be narrowed.
+
+   This protects against other accounts on the same machine. It does nothing
+   about backups, and nothing about a keyring placed in a synced folder — put
+   one in OneDrive, Dropbox or iCloud and the private key is uploaded, ACL and
+   all. The default location, `~/.crsys`, is not normally synced.
 
 5. **Streaming decryption releases unverified plaintext.** `decrypt_stream`
    writes authenticated chunks as they arrive, so the signature is only checked

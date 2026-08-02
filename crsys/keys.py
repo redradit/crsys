@@ -11,9 +11,11 @@ primitives is a classic source of cross-protocol attacks.
 
 from __future__ import annotations
 
+import getpass
 import hashlib
 import os
 import secrets
+import subprocess
 from typing import Dict, List, Optional, Tuple
 
 from cryptography.exceptions import InvalidTag
@@ -357,8 +359,14 @@ class KeyPair:
             raise FormatError("declared fingerprint does not match the private key")
         return key
 
-    def save(self, path: str, passphrase: Optional[bytes] = None) -> None:
-        _atomic_write_text(path, self.to_text(passphrase), private=True)
+    def save(self, path: str, passphrase: Optional[bytes] = None) -> bool:
+        """Write the private key. Returns whether it could be restricted to you.
+
+        A False result is not a failure to save -- the key is written and
+        usable. It means the file's permissions could not be narrowed, which is
+        worth telling the user rather than assuming.
+        """
+        return _atomic_write_text(path, self.to_text(passphrase), private=True)
 
     @classmethod
     def load(cls, path: str, passphrase: Optional[bytes] = None) -> "KeyPair":
@@ -432,8 +440,84 @@ def _parse_block(
     return fields, body
 
 
-def _atomic_write_text(path: str, text: str, private: bool = False) -> None:
-    """Write to a temporary file and rename: never leave a half-written key file."""
+_WINDOWS_SID_CACHE: List[Optional[str]] = []
+
+
+def _run_hidden(argv, timeout=20):
+    return subprocess.run(
+        argv, capture_output=True, text=True, timeout=timeout,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def _current_user_sid() -> Optional[str]:
+    """The current account's SID, looked up once.
+
+    A SID and not a name: names are ambiguous. On a machine whose hostname
+    matches the account name, passing the bare name to icacls resolved to a
+    malformed principal, which granted rights to nobody and stripped everyone
+    else — locking the owner out of their own private key.
+    """
+    if _WINDOWS_SID_CACHE:
+        return _WINDOWS_SID_CACHE[0]
+    sid = None
+    try:
+        out = _run_hidden(["whoami", "/user", "/fo", "csv", "/nh"], timeout=10)
+        if out.returncode == 0:
+            fields = [f.strip('" ') for f in out.stdout.strip().split('","')]
+            if len(fields) >= 2 and fields[-1].upper().startswith("S-1-"):
+                sid = fields[-1]
+    except (OSError, subprocess.SubprocessError):
+        sid = None
+    _WINDOWS_SID_CACHE.append(sid)
+    return sid
+
+
+def restrict_to_owner(path: str) -> bool:
+    """Make a file readable only by its owner. Returns whether that succeeded.
+
+    On POSIX this is one chmod. On Windows it is not: ``os.chmod`` there only
+    toggles the read-only flag, and the file otherwise keeps whatever the
+    containing directory grants — which for a private key is the difference
+    between "protected" and "protected in principle".
+
+    Tightening an ACL can lock the owner out, and for a private key that loss is
+    not recoverable by the person it happens to. So the new permissions are
+    proven by reading the file back, and rolled back if that fails. A key that
+    cannot be narrowed is still a usable key; a key nobody can open is not.
+    """
+    if os.name != "nt":
+        try:
+            os.chmod(path, 0o600)
+            return True
+        except OSError:
+            return False
+
+    if not os.path.exists(path):
+        return False
+    sid = _current_user_sid()
+    if not sid:
+        return False
+    try:
+        applied = _run_hidden(
+            ["icacls", path, "/inheritance:r", "/grant:r", "*%s:F" % sid])
+        if applied.returncode != 0:
+            return False
+        with open(path, "rb"):
+            pass
+        return True
+    except (OSError, subprocess.SubprocessError):
+        try:
+            _run_hidden(["icacls", path, "/reset"])
+        except (OSError, subprocess.SubprocessError):
+            pass
+        return False
+
+
+def _atomic_write_text(path: str, text: str, private: bool = False) -> bool:
+    """Write to a temporary file and rename: never leave a half-written key file.
+
+    Returns whether a private file ended up restricted to its owner.
+    """
     directory = os.path.dirname(os.path.abspath(path))
     tmp = os.path.join(directory, ".%s.tmp" % os.path.basename(path))
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
@@ -451,11 +535,7 @@ def _atomic_write_text(path: str, text: str, private: bool = False) -> None:
             pass
         raise
     os.replace(tmp, path)
-    if private:
-        try:
-            os.chmod(path, 0o600)
-        except OSError:  # pragma: no cover - POSIX modes are advisory on Windows
-            pass
+    return restrict_to_owner(path) if private else True
 
 
 # The eight small-order points of Ed25519, in encoded form. A blocklist is a
