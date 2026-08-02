@@ -210,6 +210,18 @@ independent implementation, with `tests/vectors.json` as the conformance suite.
 The security properties this buys, and what does *not* follow from them, are
 laid out in [SECURITY.md](SECURITY.md).
 
+### Two version numbers, meaning different things
+
+The **container format** is version 1: specified in SPEC.md, frozen by the test
+vectors, and carried as a byte in every header. Changing it requires a new
+version byte, and there is no plan to.
+
+The **package** is 0.x. That is not modesty about the format — it reflects the
+implementation being young. Eight defects have been found so far, four of them
+by a fuzzer written after the code was already "finished", and the rate has not
+flattened. The format can stay at v1 for years while the package works its way
+to 1.0; they are separate namespaces on purpose.
+
 ## Tests
 
 ```bash
