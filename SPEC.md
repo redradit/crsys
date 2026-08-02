@@ -69,10 +69,15 @@ MUST NOT be done.
 public_key = x25519_pub(32) || ed25519_pub(32)          // 64 bytes
 ```
 
-An implementation MUST reject an `x25519_pub` that is one of the small-order
-points of Curve25519 (RFC 7748 §6.1 and their high-bit variants — twelve values
-in total; see `crsys/keys.py`). With such a point the shared secret collapses to
-a known constant.
+An implementation SHOULD reject an `x25519_pub` that is one of the well-known
+small-order points of Curve25519 (the twelve-value list used by libsodium; see
+`crsys/keys.py`), as an early and clear error on obviously bad key material.
+
+This is a convenience, not the security control. RFC 7748 requires masking the
+high bit of the u-coordinate before use, after which several entries in that
+list are ordinary points, and no blocklist of encodings can be complete. The
+control that matters is the output check in §3.2, which an implementation MUST
+perform.
 
 ### 2.2 Private key encoding
 
@@ -160,6 +165,14 @@ wrapped_cek  = AEAD_Enc(kek, kek_nonce, CEK, LABEL_WRAP)
 Binding both public keys into `info` is what rules out unknown-key-share
 attacks. Because `kek` is used for exactly one encryption, `kek_nonce` being
 derived rather than random is safe.
+
+**An implementation MUST check that the X25519 output is not the all-zero value
+and abort if it is**, matching RFC 9180 §7.1.4. `eph_pub` is read from a header
+an attacker writes; if it is a low-order point the "shared secret" is a constant
+the attacker knows. Rejecting small-order points on input is not a substitute —
+the check belongs on the output, because a blocklist of encodings cannot be
+complete. Some libraries (OpenSSL among them) already refuse these internally,
+but an implementation must not depend on that.
 
 A single `CEK = random(32)` is shared by all stanzas of one container.
 

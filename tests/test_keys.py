@@ -10,7 +10,7 @@ from _ctx import CheapKdf, cheap_params
 
 from crsys import KeyPair, PublicKey, format_fingerprint, parse_fingerprint
 from crsys.errors import FormatError, PassphraseError
-from crsys.keys import PRIVATE_BEGIN, PUBLIC_BEGIN
+from crsys.keys import PRIVATE_BEGIN, PUBLIC_BEGIN, check_shared_secret
 
 
 class TestFingerprint(unittest.TestCase):
@@ -112,6 +112,51 @@ class TestPublicKeyFormats(unittest.TestCase):
             PublicKey(bytes(32), ed)
         with self.assertRaises(FormatError):
             PublicKey(bytes([1] + [0] * 31), ed)
+
+
+class TestSharedSecretValidation(unittest.TestCase):
+    """RFC 9180 section 7.1.4: an all-zero X25519 output MUST be rejected.
+
+    The peer key reaches this path straight from a container header, without
+    passing through PublicKey, so the small-order blocklist does not cover it.
+    OpenSSL happens to refuse these points already, which is why the check does
+    not fire in practice -- the point is not to depend on that.
+    """
+
+    def test_all_zero_output_rejected(self):
+        with self.assertRaises(FormatError) as ctx:
+            check_shared_secret(bytes(32))
+        self.assertIn("degenerate", str(ctx.exception))
+
+    def test_wrong_length_rejected(self):
+        for bad in (b"", b"\x01" * 31, b"\x01" * 33):
+            with self.subTest(length=len(bad)), self.assertRaises(FormatError):
+                check_shared_secret(bad)
+
+    def test_normal_output_passes_through(self):
+        shared = bytes(31) + b"\x01"
+        self.assertIs(check_shared_secret(shared), shared)
+
+    def test_real_exchange_is_accepted(self):
+        alice, bob = KeyPair.generate(), KeyPair.generate()
+        shared = alice.exchange(bob.public_key.x25519)
+        self.assertEqual(len(shared), 32)
+        self.assertEqual(shared, bob.exchange(alice.public_key.x25519))
+
+    def test_low_order_peer_key_is_refused_somewhere(self):
+        """Either our check or the backend must stop it -- but something must."""
+        from crsys.keys import _SMALL_ORDER_POINTS
+
+        alice = KeyPair.generate()
+        for point in sorted(_SMALL_ORDER_POINTS):
+            with self.subTest(point=point[:8].hex()):
+                try:
+                    shared = alice.exchange(point)
+                except Exception:
+                    continue  # refused, which is the required outcome
+                # If it was accepted, it must at least not be degenerate.
+                self.assertTrue(any(shared),
+                                "accepted a point yielding an all-zero secret")
 
 
 class TestPrivateKeyFile(unittest.TestCase):

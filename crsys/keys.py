@@ -50,6 +50,19 @@ PRIVATE_END = "-----END CRSYS PRIVATE KEY-----"
 _AAD_FIELDS = ("version", "cipher", "kdf", "salt", "nonce", "fingerprint")
 
 
+def check_shared_secret(shared: bytes) -> bytes:
+    """Reject a degenerate X25519 output (RFC 9180 section 7.1.4).
+
+    An all-zero shared secret means the peer supplied a low-order point, so the
+    "secret" is a constant the attacker knows.
+    """
+    if len(shared) != 32:
+        raise FormatError("X25519 output must be 32 bytes")
+    if not any(shared):
+        raise FormatError("degenerate X25519 shared secret: low-order peer key")
+    return shared
+
+
 def _fingerprint(x_pub: bytes, ed_pub: bytes) -> bytes:
     return hashlib.sha256(_FPR_DOMAIN + x_pub + ed_pub).digest()[:FPR_LEN]
 
@@ -245,7 +258,21 @@ class KeyPair:
         return self.public_key.fingerprint_hex
 
     def exchange(self, peer_x25519: bytes) -> bytes:
-        return self._x_priv.exchange(X25519PublicKey.from_public_bytes(peer_x25519))
+        """X25519 agreement, with the output validation RFC 9180 requires.
+
+        RFC 9180 section 7.1.4 is explicit: for X25519, recipients MUST check
+        whether the shared secret is all-zero and abort if so. That matters here
+        because the peer key arrives in a container header an attacker writes,
+        and it never passes through :class:`PublicKey`, so the small-order
+        blocklist there does not protect this path.
+
+        OpenSSL already refuses those points, so with the current backend this
+        check does not fire. It is here anyway: relying on a dependency for a
+        requirement the specification places on us is exactly the kind of
+        implicit assumption that breaks silently when the backend changes.
+        """
+        shared = self._x_priv.exchange(X25519PublicKey.from_public_bytes(peer_x25519))
+        return check_shared_secret(shared)
 
     def sign(self, message: bytes) -> bytes:
         return self._ed_priv.sign(message)

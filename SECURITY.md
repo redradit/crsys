@@ -83,6 +83,24 @@ cryptographically-relevant quantum computer. Anyone whose threat model includes
 valid container stays valid forever and can be re-delivered later. If that
 matters for your use case, put freshness inside the plaintext.
 
+**Deniability — signing gives you the opposite.** This is a property, not a gap,
+but it is easy to get wrong by accident so it is stated plainly.
+
+A signed CRSYS message is **non-repudiable**. The recipient can decrypt it and
+hand the plaintext, the signature and your public key to anyone, who can then
+verify that you wrote it. That is what a signature is for, and for a contract or
+a release artifact it is exactly right.
+
+It is often the wrong default for correspondence. RFC 9180's HPKE takes the
+other route: its `mode_auth` authenticates the sender with a static-ephemeral
+Diffie-Hellman, so the recipient is convinced but cannot transfer that
+conviction to a third party — either party could have produced the same
+transcript. CRSYS deliberately does not offer that mode.
+
+If you would not want a message attributable to you in front of somebody else,
+send it unsigned. The recipient still gets confidentiality and integrity; what
+they lose is proof of authorship, which in that situation is the point.
+
 **A compromised endpoint.** Keyloggers and malware beat any encryption.
 
 ## Known implementation weaknesses
