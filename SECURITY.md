@@ -6,6 +6,12 @@ CRSYS has **not been independently audited**. It was written carefully, it uses
 only standard primitives, and it has a test suite that deliberately attacks it —
 but that is not the same thing as review by people whose job is breaking things.
 
+Eight real defects have been found so far, every one by testing rather than by
+reading the code; four came from the mutation fuzzer alone. They are listed in
+the [README](README.md#defects-this-testing-has-found). That record is the
+argument for an audit, not against one: code that looks correct to its author
+and to reviewers has still been wrong eight times.
+
 For data whose compromise would have serious consequences, use
 [age](https://age-encryption.org) or GnuPG. Their value is not the algorithm; it
 is the number of competent people who have tried to break them and failed.
@@ -40,6 +46,7 @@ from [pyca/cryptography](https://cryptography.io), which is backed by OpenSSL.
 | No nonce reuse | Nonces are derived or counted, never random, under a key used exactly once |
 | KDF downgrade resistance | The scrypt/Argon2 parameters in the key file are AAD |
 | Degenerate keys rejected | Curve25519 small-order points are blocklisted |
+| Bounded resource use | Header fields are validated before any allocation; KDF parameters are bounded by resulting memory, not just per-parameter; armored input is capped |
 
 An attacker holding only the ciphertext has no known path in: it would require
 breaking X25519 or ChaCha20-Poly1305. An attacker who can modify the file is
@@ -108,9 +115,11 @@ Honest list of things a reviewer would flag:
    they publish the result only after every check passes. Use those unless you
    specifically need streaming.
 
-6. **No cross-implementation test vectors.** The container format is defined by
-   this repository and validated only against itself. There is no second
-   implementation to catch a specification ambiguity.
+6. **No second implementation.** [SPEC.md](SPEC.md) defines the format
+   normatively and `tests/vectors.json` provides frozen conformance vectors, so
+   an independent implementation is now possible to write and check. Until
+   somebody writes one, no specification ambiguity has been shaken out by
+   anything other than this codebase reading its own mind.
 
 7. **Supply chain.** Security depends on `cryptography` (and OpenSSL beneath
    it), plus `argon2-cffi` when present. That is a strength — those are audited —

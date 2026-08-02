@@ -89,6 +89,23 @@ class TestPublicKeyFormats(unittest.TestCase):
             with self.assertRaises(FormatError):
                 PublicKey.from_text(text)
 
+    def test_parse_rejects_junk_as_format_error(self):
+        """Regression, found by the fuzzer.
+
+        Unrecognised input falls through to a path lookup. A NUL byte made
+        ``open()`` raise ``ValueError`` and an odd name made it raise ``OSError``,
+        both escaping the error contract and reaching the CLI as a traceback.
+        """
+        for junk in ("", "garbage", "with\x00nul", "a" * 500, "con:/\\|?*",
+                     "\x00", "crsys1", "-----BEGIN CRSYS PUBLIC KEY-----"):
+            with self.subTest(junk=junk[:20]), self.assertRaises(FormatError):
+                PublicKey.parse(junk)
+
+    def test_parse_finds_an_embedded_block(self):
+        key = KeyPair.generate().public_key
+        wrapped = "Hi, here is my key:\n\n" + key.to_text() + "\nregards\n"
+        self.assertEqual(PublicKey.parse(wrapped), key)
+
     def test_small_order_points_rejected(self):
         ed = KeyPair.generate().public_key.ed25519
         with self.assertRaises(FormatError):

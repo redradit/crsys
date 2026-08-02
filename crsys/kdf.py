@@ -9,6 +9,7 @@ breaking decryption.
 from __future__ import annotations
 
 import secrets
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Dict
 
@@ -32,9 +33,14 @@ KEY_LEN = 32
 SCRYPT_DEFAULTS = {"n": 1 << 17, "r": 8, "p": 1}
 ARGON2_DEFAULTS = {"t": 3, "m": 131072, "p": 4}  # m in KiB -> 128 MiB
 
-# Sanity bounds: a hostile file must not be able to request a 64 GiB allocation.
+# Sanity bounds. The per-parameter ranges alone are not enough: scrypt's cost is
+# 128*n*r, so n=2**22 with r=32 asks for roughly 17 TB. The memory ceiling below
+# is the binding constraint, and it is what stops a hostile key file from turning
+# "open this" into an out-of-memory kill.
 _SCRYPT_MAX_N = 1 << 22
 _ARGON2_MAX_M = 2 << 20  # 2 GiB expressed in KiB
+
+MAX_MEMORY_BYTES = 1 << 30  # 1 GiB; far above any legitimate parameter set
 
 
 @dataclass(frozen=True)
@@ -52,6 +58,8 @@ class KdfParams:
     @classmethod
     def parse(cls, value: str, salt: bytes) -> "KdfParams":
         parts = value.strip().split(None, 1)
+        if not parts:
+            raise FormatError("missing KDF name")
         name = parts[0].lower()
         if name not in ("scrypt", "argon2id"):
             raise FormatError("unsupported KDF: %r" % name)
@@ -65,6 +73,24 @@ class KdfParams:
                 except ValueError as exc:
                     raise FormatError("non-numeric KDF parameter: %r" % item) from exc
         return cls(name=name, params=params, salt=salt)
+
+
+@contextmanager
+def _parameter_errors(name: str):
+    """Turn a backend's own exception into the documented error type.
+
+    The explicit range checks above catch the combinations we know about, but the
+    parameters come from a file an attacker may have written. Anything the
+    backend still objects to is a bad-parameter problem by definition, and
+    callers are entitled to see it as :class:`FormatError` rather than as
+    whatever type happens to leak out of the C binding.
+    """
+    try:
+        yield
+    except FormatError:
+        raise
+    except Exception as exc:
+        raise FormatError("%s rejected these parameters: %s" % (name, exc)) from None
 
 
 def default_params() -> KdfParams:
@@ -88,7 +114,14 @@ def derive(passphrase: bytes, params: KdfParams) -> bytes:
             raise FormatError("scrypt parameter n out of range: %d" % n)
         if not (1 <= r <= 32) or not (1 <= p <= 16):
             raise FormatError("scrypt parameters r/p out of range")
-        return Scrypt(salt=params.salt, length=KEY_LEN, n=n, r=r, p=p).derive(passphrase)
+        needed = 128 * n * r
+        if needed > MAX_MEMORY_BYTES:
+            raise FormatError(
+                "scrypt parameters would need %d MiB, refusing above %d MiB"
+                % (needed >> 20, MAX_MEMORY_BYTES >> 20))
+        with _parameter_errors("scrypt"):
+            return Scrypt(salt=params.salt, length=KEY_LEN,
+                          n=n, r=r, p=p).derive(passphrase)
 
     if params.name == "argon2id":
         if not ARGON2_AVAILABLE:
@@ -101,15 +134,27 @@ def derive(passphrase: bytes, params: KdfParams) -> bytes:
         p = params.params.get("p", ARGON2_DEFAULTS["p"])
         if not (1 <= t <= 32) or not (8 <= m <= _ARGON2_MAX_M) or not (1 <= p <= 16):
             raise FormatError("argon2id parameters out of range")
-        return _argon2_raw(
-            secret=passphrase,
-            salt=params.salt,
-            time_cost=t,
-            memory_cost=m,
-            parallelism=p,
-            hash_len=KEY_LEN,
-            type=_Argon2Type.ID,
-        )
+        # Argon2 additionally requires m >= 8*p. Values that satisfy their own
+        # ranges can still violate it, and the library then raises its own
+        # exception type from deep inside.
+        if m < 8 * p:
+            raise FormatError(
+                "argon2id memory cost %d is below the required 8*p = %d" % (m, 8 * p))
+        needed = m * 1024
+        if needed > MAX_MEMORY_BYTES:
+            raise FormatError(
+                "argon2id parameters would need %d MiB, refusing above %d MiB"
+                % (needed >> 20, MAX_MEMORY_BYTES >> 20))
+        with _parameter_errors("argon2id"):
+            return _argon2_raw(
+                secret=passphrase,
+                salt=params.salt,
+                time_cost=t,
+                memory_cost=m,
+                parallelism=p,
+                hash_len=KEY_LEN,
+                type=_Argon2Type.ID,
+            )
 
     raise FormatError("unsupported KDF: %r" % params.name)
 

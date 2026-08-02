@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # A weekly fuzz run with a fresh seed. Mutation fuzzing finds things on the
+    # thousandth campaign that it missed on the first.
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install cryptography argon2-cffi customtkinter
+
+      # The GUI tests need a display. On Linux they would otherwise skip
+      # themselves, which would quietly leave a quarter of the suite unrun.
+      - name: Run the suite (Linux, with a virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python tests/run_all.py
+
+      - name: Run the suite
+        if: runner.os != 'Linux'
+        run: python tests/run_all.py
+
+  fuzz:
+    name: Fuzz campaign
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install cryptography argon2-cffi
+
+      # A fixed seed on pull requests keeps failures reproducible; scheduled
+      # runs use a fresh one so the campaign explores new ground over time.
+      - name: Choose a seed
+        id: seed
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "value=$RANDOM$RANDOM" >> "$GITHUB_OUTPUT"
+            echo "iterations=2000000" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=20260802" >> "$GITHUB_OUTPUT"
+            echo "iterations=150000" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fuzz the parsers
+        run: |
+          python tests/test_fuzz.py \
+            --iterations ${{ steps.seed.outputs.iterations }} \
+            --seed ${{ steps.seed.outputs.value }}
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install cryptography argon2-cffi customtkinter coverage
+
+      - name: Measure
+        run: |
+          xvfb-run -a python -m coverage run --source=crsys,crsys_gui tests/run_all.py
+          python -m coverage report --show-missing --sort=cover
+
+      # The security-critical library is held to a real bar. The GUI is not
+      # included: its modal dialogs are stubbed out in tests by design, and
+      # folding them in would produce a number that means nothing.
+      - name: Enforce the floor on the library
+        run: |
+          python -m coverage report --include='crsys/*' --fail-under=90

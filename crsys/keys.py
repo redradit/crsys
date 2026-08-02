@@ -174,13 +174,29 @@ class PublicKey:
 
     @classmethod
     def parse(cls, value: str) -> "PublicKey":
-        """Accept the compact form, an armored block, or a file path."""
+        """Accept the compact form, an armored block, or a file path.
+
+        Anything unrecognised is tried as a path, so this is the one entry point
+        that touches the filesystem with caller-supplied text. Every way that can
+        fail is funnelled into :class:`FormatError`: without this, a stray NUL
+        byte surfaces as ``ValueError`` and an odd name as ``OSError``, both of
+        which escape the error contract callers rely on.
+        """
         stripped = value.strip()
         if stripped.startswith(COMPACT_PREFIX):
             return cls.from_compact(stripped)
-        if stripped.startswith(PUBLIC_BEGIN):
+        if PUBLIC_BEGIN in stripped:
             return cls.from_text(stripped)
-        return cls.load(value)
+        try:
+            return cls.load(value)
+        except FileNotFoundError:
+            raise FormatError(
+                "not a CRSYS public key, and no such file: %s" % _describe(value)
+            ) from None
+        except (OSError, ValueError) as exc:
+            raise FormatError(
+                "cannot read %s as a public key: %s" % (_describe(value), exc)
+            ) from None
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, PublicKey) and ct_eq(self.to_bytes(), other.to_bytes())
@@ -334,6 +350,14 @@ def _keyfile_aad(fields: Dict[str, str]) -> bytes:
 
 def _sanitize_comment(comment: str) -> str:
     return " ".join(comment.split())[:200]
+
+
+def _describe(value: str, limit: int = 60) -> str:
+    """Quote a caller-supplied value for an error message, bounded and printable."""
+    flat = " ".join(value.split())
+    if len(flat) > limit:
+        flat = flat[:limit] + "..."
+    return repr(flat)
 
 
 def _parse_block(

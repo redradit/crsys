@@ -6,6 +6,7 @@ import contextlib
 import io
 import os
 import secrets
+import sys
 import tempfile
 import unittest
 
@@ -22,6 +23,35 @@ def run(*argv):
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         code = main(list(argv))
     return code, out.getvalue(), err.getvalue()
+
+
+class _FakeStdStream:
+    """Stands in for sys.stdin / sys.stdout, which the CLI reaches through .buffer."""
+
+    def __init__(self, data: bytes = b"") -> None:
+        self.buffer = io.BytesIO(data)
+        self.text = io.StringIO()
+
+    def write(self, value):       # print() goes here, not to .buffer
+        return self.text.write(value)
+
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return False
+
+
+@contextlib.contextmanager
+def piped(stdin: bytes = b""):
+    """Run the CLI with real byte pipes, the way a shell would."""
+    saved_in, saved_out, saved_err = sys.stdin, sys.stdout, sys.stderr
+    fin, fout, ferr = _FakeStdStream(stdin), _FakeStdStream(), _FakeStdStream()
+    sys.stdin, sys.stdout, sys.stderr = fin, fout, ferr
+    try:
+        yield fin, fout
+    finally:
+        sys.stdin, sys.stdout, sys.stderr = saved_in, saved_out, saved_err
 
 
 class TestCli(unittest.TestCase):
@@ -213,6 +243,91 @@ class TestCli(unittest.TestCase):
                            "-o", self.p("x"))
         self.assertEqual(code, EXIT_CRYPTO)
         self.assertFalse(os.path.exists(self.p("x")))
+
+    # ------------------------------------------------------------ pipe mode
+
+    def test_stdin_to_stdout(self):
+        """The '-' paths are how the tool composes with other commands."""
+        payload = b"piped secret\n" * 50
+        with piped(payload) as (_fin, fout):
+            code = main(["encrypt", "-r", self.bob + ".pub", "-i", "-", "-o", "-",
+                         "--quiet"])
+            sealed = fout.buffer.getvalue()
+        self.assertEqual(code, EXIT_OK)
+        self.assertTrue(sealed.startswith(b"CRSY"))
+
+        with piped(sealed) as (_fin, fout):
+            code = main(["decrypt", "-k", self.bob + ".key", "-i", "-", "-o", "-",
+                         "--quiet"])
+            recovered = fout.buffer.getvalue()
+        self.assertEqual(code, EXIT_OK)
+        self.assertEqual(recovered, payload)
+
+    def test_stdin_to_stdout_armored_and_signed(self):
+        payload = b"armored through a pipe"
+        with piped(payload) as (_fin, fout):
+            code = main(["encrypt", "-r", self.bob + ".pub", "-s", self.alice + ".key",
+                         "-i", "-", "-o", "-", "--armor", "--quiet"])
+            sealed = fout.buffer.getvalue()
+        self.assertEqual(code, EXIT_OK)
+        self.assertTrue(sealed.startswith(b"-----BEGIN CRSYS MESSAGE-----"))
+        self.assertTrue(sealed.rstrip().endswith(b"-----END CRSYS MESSAGE-----"))
+
+        with piped(sealed) as (_fin, fout):
+            code = main(["decrypt", "-k", self.bob + ".key", "-i", "-", "-o", "-",
+                         "--require-signer", self.alice + ".pub", "--quiet"])
+            recovered = fout.buffer.getvalue()
+        self.assertEqual(code, EXIT_OK)
+        self.assertEqual(recovered, payload)
+
+    def test_inspect_from_stdin(self):
+        enc = self.p("doc.crsys")
+        run("encrypt", "-r", self.bob + ".pub", "-i", self.plain, "-o", enc)
+        with open(enc, "rb") as fh:
+            sealed = fh.read()
+        with piped(sealed) as (_fin, fout):
+            code = main(["inspect", "-i", "-"])
+            printed = fout.text.getvalue()
+        self.assertEqual(code, EXIT_OK)
+        self.assertIn("recipients  : 1", printed)
+
+    # -------------------------------------------------------- passphrase input
+
+    def test_passphrase_file(self):
+        """Automation path: no environment variable, no terminal."""
+        pw_file = self.p("pw.txt")
+        with open(pw_file, "w", encoding="utf-8") as fh:
+            fh.write(PASSPHRASE + "\nignored second line\n")
+        del os.environ[ENV_PASSPHRASE]
+        try:
+            code, out, err = run("pubkey", "-k", self.alice + ".key",
+                                 "--compact", "--passphrase-file", pw_file)
+            self.assertEqual(code, EXIT_OK, err)
+            self.assertTrue(out.strip().startswith("crsys1"))
+        finally:
+            os.environ[ENV_PASSPHRASE] = PASSPHRASE
+
+    def test_no_passphrase_source_and_no_terminal(self):
+        """Without a tty and without a source, the message must say what to do."""
+        del os.environ[ENV_PASSPHRASE]
+        try:
+            with piped() as (_fin, _fout):
+                code = main(["pubkey", "-k", self.alice + ".key"])
+            self.assertEqual(code, EXIT_CRYPTO)
+        finally:
+            os.environ[ENV_PASSPHRASE] = PASSPHRASE
+
+    def test_unencrypted_key_needs_no_passphrase(self):
+        plain_key = self.p("plain")
+        self.assertEqual(
+            run("keygen", "-o", plain_key, "--no-passphrase")[0], EXIT_OK)
+        del os.environ[ENV_PASSPHRASE]
+        try:
+            code, out, _ = run("pubkey", "-k", plain_key + ".key", "--compact")
+            self.assertEqual(code, EXIT_OK)
+            self.assertTrue(out.strip().startswith("crsys1"))
+        finally:
+            os.environ[ENV_PASSPHRASE] = PASSPHRASE
 
     # ------------------------------------------------------ detached signatures
 

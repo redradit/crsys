@@ -1,5 +1,7 @@
 # CRSYS — hybrid public-key encryption
 
+[![CI](https://github.com/redradit/crsys/actions/workflows/ci.yml/badge.svg)](https://github.com/redradit/crsys/actions/workflows/ci.yml)
+
 Encrypt and sign files and messages with a public/private key pair, from a
 graphical interface or the command line.
 
@@ -203,6 +205,8 @@ payload: a sequence of  uint32 length | ciphertext  chunks
          final chunk    = signature trailer (128 bytes) or empty
 ```
 
+[SPEC.md](SPEC.md) is the normative specification — enough detail to write an
+independent implementation, with `tests/vectors.json` as the conformance suite.
 The security properties this buys, and what does *not* follow from them, are
 laid out in [SECURITY.md](SECURITY.md).
 
@@ -212,7 +216,8 @@ laid out in [SECURITY.md](SECURITY.md).
 python tests/run_all.py
 ```
 
-133 tests, about 11 seconds. Beyond the happy paths they cover:
+184 tests, about 12 seconds, 93% coverage of the library. Beyond the happy paths
+they cover:
 
 - **every single bit** of a container flipped (3 bits per byte, at every
   offset) — no modification may go unnoticed;
@@ -224,14 +229,36 @@ python tests/run_all.py
 - hostile headers: zero recipients, 60000 recipients, absurd `chunk_size`,
   future version, unknown suite and flags, malformed length prefixes;
 - wrong passphrase, KDF parameter downgrade, corrupted key file;
-- the full CLI path including exit codes;
+- the full CLI path including exit codes, pipe mode and the automation
+  passphrase sources;
+- **frozen wire-format vectors** (`tests/vectors.json`) that pin the container
+  bytes, so a refactor cannot silently change a derivation label or a nonce;
 - **the GUI driven from code**: a real window with the event loop pumped by
   hand and modal dialogs replaced by automatic answers. Covers the full
   encrypt→decrypt cycle for both text and files, the three signature states,
   inspection, idle auto-lock, and rejection of identity names that would escape
   the keyring folder.
 
-Four real defects were found and fixed by this suite:
+### Fuzzing
+
+```bash
+python tests/test_fuzz.py --iterations 500000 --seed 1
+```
+
+A seeded, structure-aware mutation fuzzer covering the container, armor and
+key-file parsers. Atheris has no Windows wheels, so it is self-contained; a
+failure prints the seed needed to replay it. A short campaign runs as part of
+the normal suite, and CI runs a long one weekly with a fresh seed.
+
+The invariant is stronger than "must not crash". On a binary container, **any**
+mutation that changes the bytes must be rejected — a success would mean part of
+the container is malleable. Only `CrsysError` is permitted to escape; a
+`ValueError` or `IndexError` reaching the caller means malformed input got into
+code that assumed otherwise.
+
+### Defects this testing has found
+
+All eight were found by the tests, not by reading the code:
 
 1. the signature did not cover the X25519 half of the sender's identity, which
    allowed a valid signature to be re-attributed to a different fingerprint;
@@ -240,7 +267,18 @@ Four real defects were found and fixed by this suite:
 3. in the GUI, an exception inside a callback killed the polling loop, after
    which every operation hung with no explanation;
 4. non-binary input was read without a size limit, so pointing the tool at a
-   huge non-CRSYS file exhausted memory instead of failing fast.
+   huge non-CRSYS file exhausted memory instead of failing fast;
+5. `PublicKey.parse` fell through to a path lookup, so a NUL byte surfaced as
+   `ValueError` and an odd name as `OSError`, both reaching the CLI as a
+   traceback *(fuzzer)*;
+6. an empty `kdf:` header raised `IndexError` instead of a format error
+   *(fuzzer, via the new key-file corpus)*;
+7. KDF cost parameters were bounded individually but not by resulting memory:
+   scrypt with `n=2²²` and `r=32` asks for roughly 17 TB, turning a hostile key
+   file into a denial of service on open;
+8. Argon2 requires `m >= 8*p`; values inside their own ranges could still
+   violate it, and argon2-cffi raised `HashingError` straight through the error
+   contract *(fuzzer)*.
 
 ## Layout
 
@@ -262,6 +300,11 @@ crsys_gui/             graphical interface
   app.py               main window
 tests/
   run_all.py           suite runner
+  test_fuzz.py         mutation fuzzer (also runs standalone)
+  vectors.json         frozen wire-format vectors
+  make_vectors.py      regenerates them, deliberately never run by the suite
+SPEC.md                normative format specification
+SECURITY.md            threat model and known limitations
 CRSYS.pyw              double-click launcher for the GUI
 ```
 

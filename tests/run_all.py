@@ -19,9 +19,12 @@ for path in (HERE, os.path.dirname(HERE)):
 
 MODULES = [
     "test_keys",
+    "test_kdf",
     "test_container",
     "test_tamper",
     "test_signing",
+    "test_vectors",
+    "test_fuzz",
     "test_cli",
     "test_gui",
 ]
