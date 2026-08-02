@@ -481,6 +481,254 @@ class TestSignPanel(GuiTestCase):
         self.assertIn("invalid", self.banner_text(panel._verify_banner).lower())
 
 
+class TestDialogValidation(GuiTestCase):
+    """The modal dialogs' validation logic, exercised without a human.
+
+    Everywhere else these dialogs are replaced by stubs that answer on the
+    user's behalf, which left their validation entirely unexecuted -- and it is
+    not cosmetic. It is what stops an identity name from escaping the keyring
+    folder, and what stops a mistyped passphrase from locking someone out of
+    their own private key. Here the classes are driven directly: fill the
+    widgets, call the accept handler, inspect the outcome.
+    """
+
+    def _run(self, dialog_cls, args, action):
+        """Build a dialog, drive it, destroy it. Never calls show()."""
+        dialog = dialog_cls(self.app, *args)
+        try:
+            self.app.update()
+            action(dialog)
+            return dialog.result, dialog._error.cget("text")
+        finally:
+            dialog.destroy()
+            self.app.update()
+
+    # ------------------------------------------------------------ passphrase
+
+    def _passphrase(self, action, confirm=False):
+        from crsys_gui.dialogs import PassphraseDialog
+
+        return self._run(PassphraseDialog,
+                         (self.app, "Title", "Message", confirm)[1:], action)
+
+    def test_passphrase_accepted(self):
+        def fill(d):
+            d._entry.insert(0, "correct horse")
+            d._ok()
+
+        result, error = self._passphrase(fill)
+        self.assertEqual(result, "correct horse")
+        self.assertEqual(error, "")
+
+    def test_passphrase_rejects_empty(self):
+        result, error = self._passphrase(lambda d: d._ok())
+        self.assertIsNone(result)
+        self.assertIn("cannot be empty", error)
+
+    def test_passphrase_confirmation_must_match(self):
+        def mismatch(d):
+            d._entry.insert(0, "one")
+            d._entry2.insert(0, "two")
+            d._ok()
+
+        result, error = self._passphrase(mismatch, confirm=True)
+        self.assertIsNone(result)
+        self.assertIn("do not match", error)
+
+    def test_passphrase_confirmation_matching(self):
+        def matching(d):
+            d._entry.insert(0, "same")
+            d._entry2.insert(0, "same")
+            d._ok()
+
+        result, _ = self._passphrase(matching, confirm=True)
+        self.assertEqual(result, "same")
+
+    def test_passphrase_cancel(self):
+        def cancel(d):
+            d._entry.insert(0, "typed but abandoned")
+            d._cancel()
+
+        result, _ = self._passphrase(cancel)
+        self.assertIsNone(result)
+
+    # -------------------------------------------------------- new identity
+
+    def _new_identity(self, action, existing=()):
+        from crsys_gui.dialogs import NewIdentityDialog
+
+        return self._run(NewIdentityDialog, (existing,), action)
+
+    def test_new_identity_accepted(self):
+        def fill(d):
+            d._name.insert(0, "dave")
+            d._comment.insert(0, "Dave <dave@example.com>")
+            d._pass1.insert(0, "pw")
+            d._pass2.insert(0, "pw")
+            d._ok()
+
+        result, error = self._new_identity(fill)
+        self.assertEqual(error, "")
+        self.assertEqual(result, {"name": "dave",
+                                  "comment": "Dave <dave@example.com>",
+                                  "passphrase": "pw"})
+
+    def test_new_identity_rejects_dangerous_names(self):
+        """The same names the keyring refuses must never get that far."""
+        for name in ("../escape", "with/slash", "with\\backslash", "", ".hidden",
+                     "a" * 200, "  "):
+            def fill(d, n=name):
+                d._name.insert(0, n)
+                d._pass1.insert(0, "pw")
+                d._pass2.insert(0, "pw")
+                d._ok()
+
+            with self.subTest(name=name):
+                result, error = self._new_identity(fill)
+                self.assertIsNone(result)
+                self.assertIn("Invalid name", error)
+
+    def test_new_identity_rejects_duplicate(self):
+        def fill(d):
+            d._name.insert(0, "alice")
+            d._pass1.insert(0, "pw")
+            d._pass2.insert(0, "pw")
+            d._ok()
+
+        result, error = self._new_identity(fill, existing=("alice", "bob"))
+        self.assertIsNone(result)
+        self.assertIn("already exists", error)
+
+    def test_new_identity_rejects_mismatched_passphrase(self):
+        def fill(d):
+            d._name.insert(0, "dave")
+            d._pass1.insert(0, "one")
+            d._pass2.insert(0, "two")
+            d._ok()
+
+        result, error = self._new_identity(fill)
+        self.assertIsNone(result)
+        self.assertIn("do not match", error)
+
+    def test_new_identity_rejects_empty_passphrase(self):
+        def fill(d):
+            d._name.insert(0, "dave")
+            d._ok()
+
+        result, error = self._new_identity(fill)
+        self.assertIsNone(result)
+        self.assertIn("Enter a passphrase", error)
+
+    def test_new_identity_without_passphrase(self):
+        """Opting out must disable the fields and yield a None passphrase."""
+        captured = {}
+
+        def fill(d):
+            d._name.insert(0, "dave")
+            d._none.select()
+            d._toggle_passphrase()
+            captured["state"] = str(d._pass1.cget("state"))
+            d._ok()
+
+        result, _ = self._new_identity(fill)
+        self.assertEqual(captured["state"], "disabled")
+        self.assertEqual(result, {"name": "dave", "comment": "",
+                                  "passphrase": None})
+
+    # ---------------------------------------------------------------- name
+
+    def _name_dialog(self, action, existing=()):
+        from crsys_gui.dialogs import NameDialog
+
+        return self._run(NameDialog, ("Title", "Message", existing), action)
+
+    def test_name_dialog_accepts_and_rejects(self):
+        def good(d):
+            d._entry.insert(0, "carol")
+            d._ok()
+
+        self.assertEqual(self._name_dialog(good)[0], "carol")
+
+        def bad(d):
+            d._entry.insert(0, "../escape")
+            d._ok()
+
+        result, error = self._name_dialog(bad)
+        self.assertIsNone(result)
+        self.assertIn("Invalid name", error)
+
+        def duplicate(d):
+            d._entry.insert(0, "bob")
+            d._ok()
+
+        result, error = self._name_dialog(duplicate, existing=("bob",))
+        self.assertIsNone(result)
+        self.assertIn("already used", error)
+
+    # ------------------------------------------------------- import public
+
+    def _import_public(self, action, existing=()):
+        from crsys_gui.dialogs import ImportPublicDialog
+
+        return self._run(ImportPublicDialog, (existing,), action)
+
+    def test_import_public_accepts_a_compact_key(self):
+        compact = KeyPair.generate().public_key.to_compact()
+
+        def fill(d):
+            d._name.insert(0, "dave")
+            d._text.insert("0.0", compact)
+            d._ok()
+
+        result, error = self._import_public(fill)
+        self.assertEqual(error, "")
+        self.assertEqual(result, {"name": "dave", "source": compact})
+
+    def test_import_public_accepts_an_armored_block(self):
+        armored = KeyPair.generate().public_key.to_text()
+
+        def fill(d):
+            d._name.insert(0, "dave")
+            d._text.insert("0.0", armored)
+            d._ok()
+
+        result, _ = self._import_public(fill)
+        self.assertIsNotNone(result)
+
+    def test_import_public_rejects_junk(self):
+        for junk in ("not a key", "crsys1zzzz", "\x00", "-----BEGIN CRSYS PUBLIC KEY-----"):
+            def fill(d, j=junk):
+                d._name.insert(0, "dave")
+                d._text.insert("0.0", j)
+                d._ok()
+
+            with self.subTest(junk=junk[:20]):
+                result, error = self._import_public(fill)
+                self.assertIsNone(result)
+                self.assertIn("Invalid key", error)
+
+    def test_import_public_rejects_empty_text(self):
+        def fill(d):
+            d._name.insert(0, "dave")
+            d._ok()
+
+        result, error = self._import_public(fill)
+        self.assertIsNone(result)
+        self.assertIn("Paste a public key", error)
+
+    def test_import_public_rejects_bad_name(self):
+        compact = KeyPair.generate().public_key.to_compact()
+
+        def fill(d):
+            d._name.insert(0, "../escape")
+            d._text.insert("0.0", compact)
+            d._ok()
+
+        result, error = self._import_public(fill)
+        self.assertIsNone(result)
+        self.assertIn("Invalid name", error)
+
+
 class TestInterfaceSecurity(GuiTestCase):
     def test_autolock_on_idle(self):
         self.app.keyring.unlock("alice", b"pw")

@@ -228,8 +228,8 @@ to 1.0; they are separate namespaces on purpose.
 python tests/run_all.py
 ```
 
-184 tests, about 12 seconds, 93% coverage of the library. Beyond the happy paths
-they cover:
+210 tests, about 14 seconds; 93% coverage of the library and 87% overall. Beyond
+the happy paths they cover:
 
 - **every single bit** of a container flipped (3 bits per byte, at every
   offset) — no modification may go unnoticed;
@@ -249,7 +249,12 @@ they cover:
   hand and modal dialogs replaced by automatic answers. Covers the full
   encrypt→decrypt cycle for both text and files, the three signature states,
   inspection, idle auto-lock, and rejection of identity names that would escape
-  the keyring folder.
+  the keyring folder;
+- **the dialogs' own validation**, driven directly rather than stubbed out —
+  name rules, passphrase confirmation, key parsing. This is the code that stops
+  an identity name from escaping the keyring folder and a mistyped passphrase
+  from locking someone out of their own key, and stubbing the dialogs had left
+  all of it unexecuted.
 
 ### Fuzzing
 
