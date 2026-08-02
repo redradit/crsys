@@ -7,6 +7,7 @@ answer on the user's behalf.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 import time
@@ -14,7 +15,8 @@ import unittest
 
 from _ctx import CheapKdf
 
-from crsys import KeyPair
+from crsys import KeyPair, PublicKey
+from crsys.errors import PassphraseError
 
 
 # CI runners are shared and run this matrix fifteen ways at once, so wall-clock
@@ -727,6 +729,298 @@ class TestDialogValidation(GuiTestCase):
         result, error = self._import_public(fill)
         self.assertIsNone(result)
         self.assertIn("Invalid name", error)
+
+
+@contextlib.contextmanager
+def _file_dialogs(open_path="", save_path=""):
+    """Answer the native file choosers, which no test can click."""
+    from crsys_gui import tab_identities as ti
+
+    real_open = ti.filedialog.askopenfilename
+    real_save = ti.filedialog.asksaveasfilename
+    ti.filedialog.askopenfilename = lambda *a, **k: open_path
+    ti.filedialog.asksaveasfilename = lambda *a, **k: save_path
+    try:
+        yield
+    finally:
+        ti.filedialog.askopenfilename = real_open
+        ti.filedialog.asksaveasfilename = real_save
+
+
+class TestIdentityPanelActions(GuiTestCase):
+    """The actions that touch private key material on disk.
+
+    These were the least covered paths in the interface and the ones with the
+    least forgiving failure mode: importing, re-encrypting and deleting private
+    keys destroys material that cannot be recovered from anywhere else. Each
+    test cleans up whatever it creates, because later classes assert on the
+    exact contents of the keyring.
+    """
+
+    def _external_key(self, name, passphrase=b"pw"):
+        """A key file sitting outside the keyring, ready to be imported."""
+        outside = os.path.join(self.dir, "external")
+        os.makedirs(outside, exist_ok=True)
+        path = os.path.join(outside, name + ".key")
+        keypair = KeyPair.generate(comment="external")
+        keypair.save(path, passphrase)
+        return path, keypair
+
+    def _discard(self, *names):
+        for name in names:
+            if self.app.keyring.get(name) is not None:
+                self.app.keyring.delete(name)
+        self.app.refresh_identities()
+
+    # ------------------------------------------------------- import private
+
+    def test_import_private_key(self):
+        path, original = self._external_key("incoming")
+        self.dialogs.ask_name = lambda *a, **k: "imported"
+        try:
+            with _file_dialogs(open_path=path):
+                self.identities._import_private()
+            self.await_result(lambda: self.app.keyring.get("imported"),
+                              "the key was never imported")
+
+            identity = self.app.keyring.get("imported")
+            self.assertTrue(identity.has_private)
+            self.assertEqual(identity.public_key, original.public_key)
+            # The imported copy must open with the passphrase it was made with.
+            self.assertEqual(
+                self.app.keyring.cached("imported").secret_bytes(),
+                original.secret_bytes())
+            # And the public half must have been written out alongside it.
+            self.assertTrue(os.path.exists(
+                os.path.join(self.dir, "imported.pub")))
+        finally:
+            self._discard("imported")
+
+    def test_import_private_cancelled_at_each_step(self):
+        path, _ = self._external_key("cancelled")
+        before = {i.name for i in self.app.keyring.scan()}
+
+        # Cancelled at the file chooser.
+        with _file_dialogs(open_path=""):
+            self.identities._import_private()
+
+        # Cancelled at the name prompt.
+        self.dialogs.ask_name = lambda *a, **k: None
+        with _file_dialogs(open_path=path):
+            self.identities._import_private()
+
+        # Cancelled at the passphrase prompt.
+        self.dialogs.ask_name = lambda *a, **k: "abandoned"
+        self.dialogs.ask_passphrase = lambda *a, **k: None
+        with _file_dialogs(open_path=path):
+            self.identities._import_private()
+
+        self.assertEqual({i.name for i in self.app.keyring.scan()}, before)
+
+    def test_import_private_unreadable_file(self):
+        junk = os.path.join(self.dir, "external", "broken.key")
+        os.makedirs(os.path.dirname(junk), exist_ok=True)
+        with open(junk, "wb") as fh:
+            fh.write(b"this is not a key file")
+
+        self.dialogs.ask_name = lambda *a, **k: "broken"
+        with _file_dialogs(open_path=junk):
+            self.identities._import_private()
+
+        self.assertTrue(self.errors, "no error was reported to the user")
+        self.assertIn("Unreadable file", self.errors[0][0])
+        self.assertIsNone(self.app.keyring.get("broken"))
+
+    # ----------------------------------------------------- change passphrase
+
+    def _passphrase_answers(self, current="pw", new="newpw"):
+        """The dialog is asked twice; the second call sets confirm=True."""
+        def answer(parent, title, message, confirm=False):
+            return new if confirm else current
+        self.dialogs.ask_passphrase = answer
+
+    def test_change_passphrase_while_locked(self):
+        self.app.keyring.create("rotate", "Rotate", b"pw")
+        self.app.keyring.lock("rotate")
+        self.app.refresh_identities()
+        self.identities._selected = "rotate"
+        key_path = self.app.keyring.get("rotate").key_path
+        try:
+            self._passphrase_answers(current="pw", new="rotated")
+            self.identities._change_passphrase()
+            self.await_result(
+                lambda: "updated" in self.app.status._label.cget("text"))
+
+            with self.assertRaises(PassphraseError):
+                KeyPair.load(key_path, b"pw")
+            self.assertIsNotNone(KeyPair.load(key_path, b"rotated"))
+        finally:
+            self._discard("rotate")
+
+    def test_change_passphrase_while_unlocked(self):
+        """Unlocked takes the other branch: the cached key is rewritten."""
+        self.app.keyring.create("rotate2", "Rotate", b"pw")
+        self.app.refresh_identities()
+        self.identities._selected = "rotate2"
+        identity = self.app.keyring.get("rotate2")
+        self.assertTrue(identity.unlocked)
+        key_path = identity.key_path
+        try:
+            self._passphrase_answers(new="rotated2")
+            self.identities._change_passphrase()
+            self.await_result(
+                lambda: "updated" in self.app.status._label.cget("text"))
+            self.assertIsNotNone(KeyPair.load(key_path, b"rotated2"))
+        finally:
+            self._discard("rotate2")
+
+    def test_change_passphrase_cancelled_leaves_the_key_alone(self):
+        self.app.keyring.create("keepme", "Keep", b"pw")
+        self.app.keyring.lock("keepme")
+        self.app.refresh_identities()
+        self.identities._selected = "keepme"
+        key_path = self.app.keyring.get("keepme").key_path
+        try:
+            self.dialogs.ask_passphrase = lambda *a, **k: None
+            self.identities._change_passphrase()
+            self.app.update()
+            self.assertIsNotNone(KeyPair.load(key_path, b"pw"))
+
+            # Cancelled at the second prompt, after supplying the current one.
+            def only_current(parent, title, message, confirm=False):
+                return None if confirm else "pw"
+            self.dialogs.ask_passphrase = only_current
+            self.identities._change_passphrase()
+            self.app.update()
+            self.assertIsNotNone(KeyPair.load(key_path, b"pw"))
+        finally:
+            self._discard("keepme")
+
+    # ------------------------------------------------------- export and copy
+
+    def test_export_public_key(self):
+        target = os.path.join(self.dir, "external", "exported.pub")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        self.identities._select("bob")
+        with _file_dialogs(save_path=target):
+            self.identities._export_public()
+        self.assertTrue(os.path.exists(target))
+        self.assertEqual(PublicKey.load(target),
+                         self.app.keyring.public_key("bob"))
+
+    def test_export_public_cancelled(self):
+        self.identities._select("bob")
+        with _file_dialogs(save_path=""):
+            self.identities._export_public()
+        self.assertFalse(self.errors)
+
+    def test_export_public_to_an_unwritable_path(self):
+        target = os.path.join(self.dir, "no-such-directory", "x.pub")
+        self.identities._select("bob")
+        with _file_dialogs(save_path=target):
+            self.identities._export_public()
+        self.assertTrue(self.errors, "a failed export must tell the user")
+        self.assertIn("Export failed", self.errors[0][0])
+
+    def test_copy_compact_form(self):
+        self.identities._select("bob")
+        self.identities._copy_compact()
+        self.app.update()
+        self.assertEqual(self.app.clipboard_get(),
+                         self.app.keyring.public_key("bob").to_compact())
+
+    # ------------------------------------------------------------- deletion
+
+    def test_delete_refused_when_the_user_says_no(self):
+        self.app.keyring.create("doomed", "Doomed", b"pw")
+        self.app.refresh_identities()
+        self.identities._selected = "doomed"
+        try:
+            self.dialogs.ask_yes_no = lambda *a, **k: False
+            self.identities._delete()
+            self.assertIsNotNone(self.app.keyring.get("doomed"))
+        finally:
+            self.dialogs.ask_yes_no = lambda *a, **k: True
+            self._discard("doomed")
+
+    def test_delete_warns_harder_about_a_private_key(self):
+        """The confirmation text must say the material is unrecoverable."""
+        seen = {}
+
+        def capture(parent, title, message):
+            seen["message"] = message
+            return False
+
+        self.app.keyring.create("withpriv", "With private", b"pw")
+        self.app.keyring.import_public(
+            KeyPair.generate().public_key.to_compact(), "publiconly")
+        self.app.refresh_identities()
+        try:
+            self.dialogs.ask_yes_no = capture
+
+            self.identities._selected = "withpriv"
+            self.identities._delete()
+            self.assertIn("PRIVATE KEY", seen["message"])
+            self.assertIn("permanently unreadable", seen["message"])
+
+            self.identities._selected = "publiconly"
+            self.identities._delete()
+            self.assertNotIn("PRIVATE KEY", seen["message"])
+        finally:
+            self.dialogs.ask_yes_no = lambda *a, **k: True
+            self._discard("withpriv", "publiconly")
+
+    def test_delete_removes_both_files(self):
+        self.app.keyring.create("goodbye", "Goodbye", b"pw")
+        self.app.refresh_identities()
+        self.identities._selected = "goodbye"
+        self.identities._delete()
+        self.assertIsNone(self.app.keyring.get("goodbye"))
+        for ext in (".key", ".pub"):
+            self.assertFalse(os.path.exists(
+                os.path.join(self.dir, "goodbye" + ext)))
+        self.assertNotIn("goodbye", self.app.keyring.unlocked_names())
+
+    # --------------------------------------------------------------- sundry
+
+    def test_lock_all_from_the_panel(self):
+        self.app.keyring.unlock("alice", b"pw")
+        self.identities._lock_all_keys()
+        self.assertEqual(self.app.keyring.unlocked_names(), [])
+
+    def test_actions_are_inert_with_nothing_selected(self):
+        """Every handler guards on there being a selection."""
+        self.identities._selected = None
+        self.identities._toggle_lock()
+        self.identities._change_passphrase()
+        self.identities._export_public()
+        self.identities._copy_compact()
+        self.identities._delete()
+        self.assertFalse(self.errors)
+
+    def test_import_public_reports_a_bad_key(self):
+        self.dialogs.ask_public_key = lambda *a, **k: {
+            "name": "bogus", "source": "not a key at all"}
+        self.identities._import_public()
+        self.assertTrue(self.errors)
+        self.assertIn("Import failed", self.errors[0][0])
+        self.assertIsNone(self.app.keyring.get("bogus"))
+
+    def test_row_hover_changes_only_unselected_rows(self):
+        from crsys_gui.tab_identities import IdentityRow
+
+        rows = [w for w in self.identities._list.winfo_children()
+                if isinstance(w, IdentityRow)]
+        self.assertTrue(rows, "the identity list rendered no rows")
+        unselected = [r for r in rows if not r._selected]
+        self.assertTrue(unselected)
+
+        row = unselected[0]
+        row._enter()
+        hovered = row.cget("fg_color")
+        row._leave()
+        self.assertEqual(row.cget("fg_color"), "transparent")
+        self.assertNotEqual(hovered, "transparent")
 
 
 class TestInterfaceSecurity(GuiTestCase):

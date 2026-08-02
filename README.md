@@ -228,7 +228,7 @@ to 1.0; they are separate namespaces on purpose.
 python tests/run_all.py
 ```
 
-210 tests, about 14 seconds; 93% coverage of the library and 87% overall. Beyond
+227 tests, about 20 seconds; 93% coverage of the library and 90% overall. Beyond
 the happy paths they cover:
 
 - **every single bit** of a container flipped (3 bits per byte, at every
@@ -254,7 +254,11 @@ the happy paths they cover:
   name rules, passphrase confirmation, key parsing. This is the code that stops
   an identity name from escaping the keyring folder and a mistyped passphrase
   from locking someone out of their own key, and stubbing the dialogs had left
-  all of it unexecuted.
+  all of it unexecuted;
+- **the operations that touch private keys on disk** — importing a key file,
+  re-encrypting one under a new passphrase, exporting, deleting — including the
+  cancel path at every prompt, because these are the ones whose failure mode is
+  unrecoverable.
 
 ### Fuzzing
 
