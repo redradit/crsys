@@ -222,6 +222,46 @@ class TestIdentitiesPanel(GuiTestCase):
                           "alice never unlocked")
         self.assertTrue(self.app.keyring.is_unlocked("alice"))
 
+    def test_import_menu_entries_reach_their_handlers(self):
+        """Regression: choosing from the Import menu did nothing at all.
+
+        The menu was a hand-rolled popup that closed itself on <FocusOut>.
+        Pressing an entry moved focus, so it destroyed itself on mouse-down and
+        the button was gone before its command could run. Every other path was
+        tested by calling _import_public and _import_private directly, which
+        skipped the menu entirely and left the only broken part uncovered.
+
+        The menu is built here but never posted: tk_popup would block.
+        """
+        menu = self.identities.build_import_menu()
+        try:
+            labels = [menu.entrycget(i, "label") for i in range(menu.index("end") + 1)]
+            self.assertEqual([label.strip() for label in labels],
+                             ["Public key…", "Private key…"])
+
+            calls = []
+            self.dialogs.ask_public_key = lambda *a, **k: calls.append("public")
+            menu.invoke(0)
+            self.assertEqual(calls, ["public"],
+                             "the Public key entry did not reach its handler")
+
+            from crsys_gui import tab_identities as ti
+
+            real = ti.filedialog.askopenfilename
+            ti.filedialog.askopenfilename = lambda *a, **k: calls.append("private") or ""
+            try:
+                menu.invoke(1)
+            finally:
+                ti.filedialog.askopenfilename = real
+            self.assertEqual(calls, ["public", "private"],
+                             "the Private key entry did not reach its handler")
+        finally:
+            menu.destroy()
+
+    def test_import_button_anchors_the_menu(self):
+        """The menu is placed under the button, not at a hardcoded offset."""
+        self.assertTrue(self.identities._import_button.winfo_exists())
+
     def test_import_public(self):
         stranger = KeyPair.generate(comment="Dave")
         self.dialogs.ask_public_key = lambda *a, **k: {

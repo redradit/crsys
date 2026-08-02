@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import tkinter
 from tkinter import filedialog
 from typing import List, Optional
 
@@ -81,9 +82,15 @@ class IdentitiesPanel(Panel):
                      pady=(theme.PAD_S, 0))
         ctk.CTkButton(toolbar, text="+  Generate", height=30,
                       command=self._generate).pack(side="left")
-        ctk.CTkButton(toolbar, text="Import…", height=30, width=90,
-                      fg_color="transparent", border_width=1,
-                      command=self._import_menu).pack(side="left", padx=(theme.PAD_S, 0))
+        # Kept as an attribute: the menu is positioned under this button rather
+        # than at a hardcoded offset, which silently went wrong when the layout
+        # changed.
+        self._import_button = ctk.CTkButton(
+            toolbar, text="Import…", height=30, width=90,
+            fg_color="transparent", border_width=1, border_color=theme.BORDER,
+            text_color=theme.TEXT_SECONDARY, hover_color=theme.NEUTRAL_BG,
+            command=self._import_menu)
+        self._import_button.pack(side="left", padx=(theme.PAD_S, 0))
 
         self._list = ctk.CTkScrollableFrame(left, fg_color="transparent")
         self._list.grid(row=1, column=0, sticky="nsew", padx=theme.PAD_S,
@@ -285,28 +292,36 @@ class IdentitiesPanel(Panel):
 
         self.app.run(job, done, "Could not create the identity")
 
+    def build_import_menu(self) -> tkinter.Menu:
+        """The Import menu, built but not posted, so it can be tested."""
+        menu = tkinter.Menu(
+            self, tearoff=0, borderwidth=0, activeborderwidth=0,
+            bg=self._apply_appearance_mode(theme.SURFACE_RAISED),
+            fg=self._apply_appearance_mode(theme.TEXT_PRIMARY),
+            activebackground=self._apply_appearance_mode(theme.ACCENT),
+            activeforeground="#FFFFFF",
+            font=("", theme.SIZE_BODY))
+        menu.add_command(label="  Public key…  ", command=self._import_public)
+        menu.add_command(label="  Private key…  ", command=self._import_private)
+        return menu
+
     def _import_menu(self) -> None:
-        menu = ctk.CTkToplevel(self.app)
-        menu.overrideredirect(True)
-        menu.attributes("-topmost", True)
-        x = self.winfo_rootx() + 130
-        y = self.winfo_rooty() + 46
-        menu.geometry("+%d+%d" % (x, y))
-        frame = ctk.CTkFrame(menu, corner_radius=6, border_width=1)
-        frame.pack()
+        """Post the Import menu under its button.
 
-        def choose(action):
-            menu.destroy()
-            action()
-
-        for text, action in (("Public key…", self._import_public),
-                             ("Private key…", self._import_private)):
-            ctk.CTkButton(frame, text=text, width=180, height=30, anchor="w",
-                          fg_color="transparent",
-                          command=lambda a=action: choose(a)).pack(padx=4, pady=2)
-
-        menu.bind("<FocusOut>", lambda _e=None: menu.destroy())
-        menu.after(120, menu.focus_force)
+        This used to be a hand-rolled CTkToplevel that closed itself on
+        <FocusOut>. Pressing an entry moved focus, so the popup destroyed itself
+        on mouse-down and the button was gone before its command could run on
+        mouse-up: the menu appeared, and choosing from it did nothing. Tk's own
+        menu already handles focus, grabs and dismissal, and gets them right.
+        """
+        menu = self.build_import_menu()
+        button = self._import_button
+        x = button.winfo_rootx()
+        y = button.winfo_rooty() + button.winfo_height() + 2
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
 
     def _import_public(self) -> None:
         data = dialogs.ask_public_key(self.app, [i.name for i in self._identities])
