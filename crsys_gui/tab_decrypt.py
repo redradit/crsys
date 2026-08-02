@@ -70,9 +70,6 @@ class DecryptPanel(Panel):
                                        title="Save the decrypted file",
                                        filetypes=ALL_FILES)
         self._output_file.pack(fill="x")
-        hint(self._file_frame,
-             "The destination file is written only once verification completes, so "
-             "a tampered container leaves nothing half-written.")
 
         self._banner = Banner(inner)
 
@@ -89,16 +86,16 @@ class DecryptPanel(Panel):
         section(inner, "Expected sender")
         self._expected = IdentityChooser(inner, allow_none=True, width=270)
         self._expected.pack(fill="x")
-        hint(inner, "When set, the operation fails unless the message is signed by "
-                    "exactly that key. This is how you avoid being fooled by an "
-                    "arbitrary sender.")
+        # Kept: without this, an unsigned message is accepted in silence.
+        hint(inner, "Set this and decryption fails unless that exact key signed it.")
 
         section(inner, "Before opening")
         ctk.CTkButton(inner, text="Inspect container", height=32,
                       fg_color="transparent", border_width=1,
+                      border_color=theme.BORDER, text_color=theme.TEXT_SECONDARY,
+                      hover_color=theme.NEUTRAL_BG,
                       command=self._inspect).pack(fill="x")
-        hint(inner, "Shows suite, recipients and whether it is signed, without using "
-                    "any key and without decrypting anything.")
+        hint(inner, "Reads the metadata without using a key.")
 
         self._button = ctk.CTkButton(inner, text="Decrypt", height=40,
                                      font=ctk.CTkFont(size=theme.TITLE_SIZE,

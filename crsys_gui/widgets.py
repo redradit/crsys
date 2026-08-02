@@ -27,17 +27,33 @@ class Panel(ctk.CTkFrame):
 
 
 def section(master, text: str) -> ctk.CTkLabel:
+    """A field label. Small, uppercase-weight, quiet -- it names, it does not shout."""
     label = ctk.CTkLabel(master, text=text, anchor="w",
-                         font=ctk.CTkFont(size=theme.BODY_SIZE, weight="bold"))
-    label.pack(fill="x", pady=(theme.PAD, 2))
+                         text_color=theme.TEXT_SECONDARY,
+                         font=ctk.CTkFont(size=theme.SIZE_CAPTION, weight="bold"))
+    label.pack(fill="x", pady=(theme.SPACE_M, theme.SPACE_XS))
     return label
 
 
 def hint(master, text: str) -> ctk.CTkLabel:
+    """Explanatory text under a control.
+
+    Used sparingly on purpose. A paragraph under every field turned the first
+    version into documentation with buttons in it; these now survive only where
+    they stop a security mistake, not wherever something could be explained.
+    """
     label = ctk.CTkLabel(master, text=text, anchor="w", justify="left",
-                         text_color=theme.MUTED_FG, wraplength=560,
-                         font=ctk.CTkFont(size=theme.SMALL_SIZE))
-    label.pack(fill="x", pady=(2, 0))
+                         text_color=theme.MUTED_FG, wraplength=520,
+                         font=ctk.CTkFont(size=theme.SIZE_CAPTION))
+    label.pack(fill="x", pady=(theme.SPACE_XS, 0))
+    return label
+
+
+def title(master, text: str) -> ctk.CTkLabel:
+    label = ctk.CTkLabel(master, text=text, anchor="w",
+                         text_color=theme.TEXT_PRIMARY,
+                         font=ctk.CTkFont(size=theme.SIZE_TITLE, weight="bold"))
+    label.pack(fill="x")
     return label
 
 

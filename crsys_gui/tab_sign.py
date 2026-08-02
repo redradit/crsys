@@ -39,9 +39,7 @@ class SignPanel(Panel):
         ctk.CTkLabel(inner, text="Sign a file", anchor="w",
                      font=ctk.CTkFont(size=theme.TITLE_SIZE, weight="bold")
                      ).pack(fill="x")
-        hint(inner, "The file is neither encrypted nor modified: a separate "
-                    "signature is produced that anyone can verify with your "
-                    "public key.")
+        hint(inner, "The file is left untouched; the signature travels separately.")
 
         section(inner, "File to sign")
         self._sign_input = FilePicker(inner, mode="open", title="File to sign",
@@ -79,8 +77,7 @@ class SignPanel(Panel):
         ctk.CTkLabel(inner, text="Verify a signature", anchor="w",
                      font=ctk.CTkFont(size=theme.TITLE_SIZE, weight="bold")
                      ).pack(fill="x")
-        hint(inner, "Confirms that the file was not touched after signing and that "
-                    "it came from the private key shown.")
+        hint(inner, "Confirms the file is unchanged and names who signed it.")
 
         section(inner, "Original file")
         self._verify_input = FilePicker(inner, mode="open", title="File to verify",

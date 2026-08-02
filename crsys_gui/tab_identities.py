@@ -12,7 +12,15 @@ from crsys import KeyPair
 
 from . import dialogs, theme
 from .keyring import Identity
-from .widgets import Panel
+from .widgets import Panel, section
+
+
+def _ghost_button(master, text: str, command) -> ctk.CTkButton:
+    """A secondary action: no fill, no border, weight carried by the label alone."""
+    return ctk.CTkButton(master, text=text, height=34, fg_color="transparent",
+                         hover_color=theme.NEUTRAL_BG,
+                         text_color=theme.TEXT_SECONDARY,
+                         command=command)
 
 
 class IdentityRow(ctk.CTkFrame):
@@ -109,69 +117,80 @@ class IdentitiesPanel(Panel):
         self._card = ctk.CTkFrame(self._detail, fg_color="transparent")
 
         self._title = ctk.CTkLabel(self._card, text="", anchor="w",
-                                   font=ctk.CTkFont(size=theme.TITLE_SIZE + 3,
+                                   text_color=theme.TEXT_PRIMARY,
+                                   font=ctk.CTkFont(size=theme.SIZE_DISPLAY,
                                                     weight="bold"))
         self._title.pack(fill="x")
         self._subtitle = ctk.CTkLabel(self._card, text="", anchor="w",
                                       text_color=theme.MUTED_FG,
-                                      font=ctk.CTkFont(size=theme.BODY_SIZE))
-        self._subtitle.pack(fill="x", pady=(0, theme.PAD))
+                                      font=ctk.CTkFont(size=theme.SIZE_BODY))
+        self._subtitle.pack(fill="x", pady=(theme.SPACE_XS, theme.SPACE_L))
 
+        # Two facts, not four. The label already appears as the subtitle above,
+        # and the file names are developer trivia -- listing them made the panel
+        # read as a debug dump rather than a description of an identity.
         self._fields = ctk.CTkFrame(self._card, fg_color="transparent")
         self._fields.pack(fill="x")
         self._fields.grid_columnconfigure(1, weight=1)
 
         self._value_widgets = {}
-        for row, label in enumerate(("Fingerprint", "Label", "State", "Files")):
-            ctk.CTkLabel(self._fields, text=label, anchor="w", width=90,
+        for row, label in enumerate(("Fingerprint", "State")):
+            ctk.CTkLabel(self._fields, text=label.upper(), anchor="w", width=96,
                          text_color=theme.MUTED_FG,
-                         font=ctk.CTkFont(size=theme.SMALL_SIZE)
-                         ).grid(row=row, column=0, sticky="w", pady=3)
+                         font=ctk.CTkFont(size=theme.SIZE_CAPTION, weight="bold")
+                         ).grid(row=row, column=0, sticky="w",
+                                pady=(0, theme.SPACE_S))
+            # Monospace only where the characters must be compared one by one.
+            family = theme.MONO if label == "Fingerprint" else None
             value = ctk.CTkLabel(self._fields, text="", anchor="w", justify="left",
-                                 font=ctk.CTkFont(family=theme.MONO,
-                                                  size=theme.SMALL_SIZE))
-            value.grid(row=row, column=1, sticky="ew", pady=3)
+                                 text_color=theme.TEXT_PRIMARY,
+                                 font=ctk.CTkFont(family=family,
+                                                  size=theme.SIZE_BODY))
+            value.grid(row=row, column=1, sticky="ew", pady=(0, theme.SPACE_S))
             self._value_widgets[label] = value
 
-        ctk.CTkLabel(self._card, text="Public key, compact form", anchor="w",
-                     font=ctk.CTkFont(size=theme.BODY_SIZE, weight="bold")
-                     ).pack(fill="x", pady=(theme.PAD, 2))
+        section(self._card, "PUBLIC KEY, COMPACT FORM")
+        # Bounded rather than stretched: a base64 key spread across a maximised
+        # window is harder to read, not easier.
         compact_row = ctk.CTkFrame(self._card, fg_color="transparent")
         compact_row.pack(fill="x")
-        self._compact = ctk.CTkEntry(compact_row, font=ctk.CTkFont(family=theme.MONO,
-                                                                   size=theme.SMALL_SIZE))
-        self._compact.pack(side="left", fill="x", expand=True)
-        ctk.CTkButton(compact_row, text="Copy", width=80,
+        self._compact = ctk.CTkEntry(compact_row, width=620, height=34,
+                                     font=ctk.CTkFont(family=theme.MONO,
+                                                      size=theme.SIZE_CAPTION))
+        self._compact.pack(side="left")
+        ctk.CTkButton(compact_row, text="Copy", width=84, height=34,
                       command=self._copy_compact).pack(side="left",
-                                                       padx=(theme.PAD_S, 0))
+                                                       padx=(theme.SPACE_S, 0))
         ctk.CTkLabel(self._card,
-                     text="This is what you send to whoever needs to write to you. "
-                          "Have them confirm the fingerprint over a different channel "
-                          "(voice, in person): the software cannot do that for you.",
+                     text="Send this to whoever needs to write to you. Have them "
+                          "confirm the fingerprint over a different channel — voice, "
+                          "in person. The software cannot do that for you.",
                      anchor="w", justify="left", wraplength=560,
                      text_color=theme.MUTED_FG,
-                     font=ctk.CTkFont(size=theme.SMALL_SIZE)).pack(fill="x", pady=(4, 0))
+                     font=ctk.CTkFont(size=theme.SIZE_CAPTION)
+                     ).pack(fill="x", pady=(theme.SPACE_S, 0))
 
+        # One filled button carries the primary action; the rest are quiet text
+        # buttons. Three outlined boxes in a row gave every action the same
+        # weight, which is the same as giving none of them any.
         actions = ctk.CTkFrame(self._card, fg_color="transparent")
-        actions.pack(fill="x", pady=(theme.PAD, 0))
-        self._btn_unlock = ctk.CTkButton(actions, text="Unlock", width=120,
+        actions.pack(fill="x", pady=(theme.SPACE_L, 0))
+        self._btn_unlock = ctk.CTkButton(actions, text="Unlock", width=130, height=34,
                                          command=self._toggle_lock)
         self._btn_unlock.pack(side="left")
-        self._btn_passwd = ctk.CTkButton(actions, text="Change passphrase", width=170,
-                                         fg_color="transparent", border_width=1,
-                                         command=self._change_passphrase)
-        self._btn_passwd.pack(side="left", padx=theme.PAD_S)
-        self._btn_export = ctk.CTkButton(actions, text="Export public…", width=150,
-                                         fg_color="transparent", border_width=1,
-                                         command=self._export_public)
+        self._btn_passwd = _ghost_button(actions, "Change passphrase",
+                                         self._change_passphrase)
+        self._btn_passwd.pack(side="left", padx=(theme.SPACE_S, 0))
+        self._btn_export = _ghost_button(actions, "Export public…",
+                                         self._export_public)
         self._btn_export.pack(side="left")
 
-        danger = ctk.CTkFrame(self._card, fg_color="transparent")
-        danger.pack(fill="x", pady=(theme.PAD, 0))
-        ctk.CTkButton(danger, text="Delete identity", width=140,
-                      fg_color="transparent", border_width=1,
-                      text_color=theme.ERROR_FG, hover_color=theme.ERROR_BG,
-                      command=self._delete).pack(side="left")
+        ctk.CTkButton(self._card, text="Delete identity", width=130, height=30,
+                      fg_color="transparent", hover_color=theme.ERROR_BG,
+                      text_color=theme.ERROR_FG, anchor="w",
+                      font=ctk.CTkFont(size=theme.SIZE_CAPTION),
+                      command=self._delete).pack(anchor="w",
+                                                 pady=(theme.SPACE_XL, 0))
 
     # ------------------------------------------------------------------ data
 
@@ -217,23 +236,19 @@ class IdentitiesPanel(Panel):
         self._title.configure(text=identity.name)
         self._subtitle.configure(text=identity.comment or "no label")
 
-        files = " · ".join(os.path.basename(p) for p in
-                           (identity.key_path, identity.pub_path) if p)
         state = identity.error or {
-            "public only": "public key only — you can encrypt to it, not sign as it",
-            "private": "private key locked"
-            + ("" if identity.encrypted else " (stored WITHOUT a passphrase)"),
-            "unlocked": "private key unlocked in memory",
-            "unreadable": "damaged file",
+            "public only": "Public key only — you can encrypt to it, not sign as it",
+            "private": "Private key locked"
+            + ("" if identity.encrypted else " — stored WITHOUT a passphrase"),
+            "unlocked": "Private key unlocked in memory",
+            "unreadable": "Damaged file",
         }.get(identity.kind, identity.kind)
 
         self._value_widgets["Fingerprint"].configure(text=identity.fingerprint)
-        self._value_widgets["Label"].configure(text=identity.comment or "—")
         self._value_widgets["State"].configure(
             text=state,
             text_color=theme.ERROR_FG if identity.error else
-            theme.OK_FG if identity.unlocked else theme.MUTED_FG)
-        self._value_widgets["Files"].configure(text=files or "—")
+            theme.OK_FG if identity.unlocked else theme.TEXT_SECONDARY)
 
         self._compact.configure(state="normal")
         self._compact.delete(0, "end")

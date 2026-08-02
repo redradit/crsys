@@ -77,9 +77,6 @@ class EncryptPanel(Panel):
                                        filetypes=CRSYS_FILES,
                                        default_extension=".crsys")
         self._output_file.pack(fill="x")
-        hint(self._file_frame,
-             "The file is read and written in chunks: memory use does not depend "
-             "on its size, so large archives are fine.")
 
         self._banner = Banner(inner)
 
@@ -91,14 +88,12 @@ class EncryptPanel(Panel):
 
         self._recipients = RecipientPicker(inner, height=170)
         self._recipients.pack(fill="both", expand=True)
-        hint(inner, "Everyone selected will be able to open the file, each with "
-                    "their own key. There is still only one container.")
 
         section(inner, "Sign with")
         self._signer = IdentityChooser(inner, allow_none=True, width=270)
         self._signer.pack(fill="x")
-        hint(inner, "Without a signature the recipient can read the content but has "
-                    "no proof of who wrote it.")
+        # Kept: this one prevents a security mistake rather than explaining a control.
+        hint(inner, "Unsigned, the recipient can read it but cannot prove you wrote it.")
 
         section(inner, "Options")
         self._armor = ctk.CTkCheckBox(inner, text="ASCII output (for email)",

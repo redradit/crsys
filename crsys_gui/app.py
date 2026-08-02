@@ -39,6 +39,7 @@ class CrsysApp(ctk.CTk):
             self._settings["appearance"] = "System"
         ctk.set_appearance_mode(self._settings["appearance"])
         ctk.set_default_color_theme("blue")
+        theme.apply()  # must run before any widget is constructed
 
         self.title("CRSYS  —  public-key encryption")
         self.geometry(self._settings.get("geometry", "1120x740"))
@@ -98,48 +99,69 @@ class CrsysApp(ctk.CTk):
     # ------------------------------------------------------------------ build
 
     def _build_header(self) -> None:
-        header = ctk.CTkFrame(self, corner_radius=0)
+        header = ctk.CTkFrame(self, corner_radius=0, fg_color=theme.SURFACE_RAISED)
         header.grid(row=0, column=0, sticky="ew")
         header.grid_columnconfigure(1, weight=1)
 
+        # Wordmark, with the version as a quiet subscript rather than a peer.
         left = ctk.CTkFrame(header, fg_color="transparent")
-        left.grid(row=0, column=0, sticky="w", padx=theme.PAD, pady=theme.PAD_S)
-        ctk.CTkLabel(left, text="CRSYS", anchor="w",
-                     font=ctk.CTkFont(size=20, weight="bold")).pack(side="left")
-        ctk.CTkLabel(left, text="v%s" % __version__, text_color=theme.MUTED_FG,
-                     font=ctk.CTkFont(size=theme.SMALL_SIZE)
-                     ).pack(side="left", padx=(6, 0), pady=(6, 0))
+        left.grid(row=0, column=0, sticky="w",
+                  padx=(theme.SPACE_L, theme.SPACE_M), pady=theme.SPACE_M)
+        ctk.CTkLabel(left, text="CRSYS", anchor="w", text_color=theme.TEXT_PRIMARY,
+                     font=ctk.CTkFont(size=theme.SIZE_DISPLAY, weight="bold")
+                     ).pack(side="left")
+        ctk.CTkLabel(left, text=__version__, text_color=theme.MUTED_FG,
+                     font=ctk.CTkFont(size=theme.SIZE_CAPTION)
+                     ).pack(side="left", padx=(theme.SPACE_S, 0), pady=(8, 0))
 
+        # The keyring path was the loudest thing on screen and the least
+        # important. It keeps only its tail, at caption size.
         middle = ctk.CTkFrame(header, fg_color="transparent")
-        middle.grid(row=0, column=1, sticky="w", padx=theme.PAD)
-        ctk.CTkLabel(middle, text="Keyring:", text_color=theme.MUTED_FG,
-                     font=ctk.CTkFont(size=theme.SMALL_SIZE)).pack(side="left")
-        ctk.CTkButton(middle, text=self.keyring.directory, height=24,
+        middle.grid(row=0, column=1, sticky="w")
+        ctk.CTkButton(middle, text=self._short_keyring_path(), height=26,
                       fg_color="transparent", text_color=theme.MUTED_FG,
-                      hover_color=theme.CARD_BG, anchor="w",
-                      font=ctk.CTkFont(family=theme.MONO, size=theme.SMALL_SIZE),
+                      hover_color=theme.NEUTRAL_BG, anchor="w",
+                      font=ctk.CTkFont(size=theme.SIZE_CAPTION),
                       command=self._open_keyring_dir).pack(side="left")
 
         right = ctk.CTkFrame(header, fg_color="transparent")
-        right.grid(row=0, column=2, sticky="e", padx=theme.PAD, pady=theme.PAD_S)
+        right.grid(row=0, column=2, sticky="e",
+                   padx=(theme.SPACE_M, theme.SPACE_L), pady=theme.SPACE_M)
 
         self._lock_button = ctk.CTkButton(
-            right, text="No unlocked keys", height=28, width=190,
-            fg_color="transparent", border_width=1,
-            font=ctk.CTkFont(size=theme.SMALL_SIZE), command=self._lock_all)
-        self._lock_button.pack(side="left", padx=(0, theme.PAD_S))
+            right, text="No unlocked keys", height=30, width=200,
+            fg_color="transparent", border_width=1, border_color=theme.BORDER,
+            font=ctk.CTkFont(size=theme.SIZE_CAPTION), command=self._lock_all)
+        self._lock_button.pack(side="left", padx=(0, theme.SPACE_S))
 
+        # CTkOptionMenu refuses a transparent fill, so it recedes by tone instead.
         appearance = ctk.CTkOptionMenu(
-            right, values=list(APPEARANCE_MODES), width=110, height=28,
-            font=ctk.CTkFont(size=theme.SMALL_SIZE),
+            right, values=list(APPEARANCE_MODES), width=104, height=30,
+            fg_color=theme.NEUTRAL_BG, button_color=theme.NEUTRAL_BG,
+            button_hover_color=theme.CARD_BG, text_color=theme.TEXT_SECONDARY,
+            font=ctk.CTkFont(size=theme.SIZE_CAPTION),
             command=self._set_appearance)
         appearance.set(self._settings.get("appearance", "System"))
         appearance.pack(side="left")
 
+    def _short_keyring_path(self) -> str:
+        """Enough of the path to recognise it, not enough to dominate."""
+        parts = os.path.normpath(self.keyring.directory).split(os.sep)
+        tail = os.sep.join(parts[-2:]) if len(parts) > 2 else self.keyring.directory
+        return "…%s%s" % (os.sep, tail) if len(parts) > 2 else tail
+
     def _build_tabs(self) -> None:
-        self._tabs = ctk.CTkTabview(self, anchor="w")
-        self._tabs.grid(row=1, column=0, sticky="nsew", padx=theme.PAD,
-                        pady=(theme.PAD_S, 0))
+        self._tabs = ctk.CTkTabview(self, anchor="w", fg_color="transparent")
+        self._tabs.grid(row=1, column=0, sticky="nsew",
+                        padx=theme.SPACE_L, pady=(0, theme.SPACE_S))
+
+        # CTkTabview offers no public handle on its selector, and at the default
+        # size it reads as a widget rather than as the app's navigation.
+        try:
+            self._tabs._segmented_button.configure(
+                height=36, font=ctk.CTkFont(size=theme.SIZE_BODY, weight="bold"))
+        except Exception:
+            pass
 
         self.panels = {}
         for name, factory in (("Identities", IdentitiesPanel),
