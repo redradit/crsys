@@ -1,0 +1,8 @@
+# Cryptographic primitives (X25519, Ed25519, HKDF, ChaCha20-Poly1305, AES-GCM, scrypt)
+cryptography>=42.0
+
+# Graphical interface (not needed for the library or the CLI)
+customtkinter>=5.2
+
+# Optional: enables Argon2id instead of scrypt for private key protection
+# argon2-cffi>=23.1
