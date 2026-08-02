@@ -17,7 +17,12 @@ from _ctx import CheapKdf
 from crsys import KeyPair
 
 
-def _pump(app, until=None, timeout: float = 30.0) -> bool:
+# CI runners are shared and run this matrix fifteen ways at once, so wall-clock
+# budgets have to be generous. The tests do not depend on the duration.
+PUMP_TIMEOUT = 60.0
+
+
+def _pump(app, until=None, timeout: float = PUMP_TIMEOUT) -> bool:
     """Run the event loop until the condition holds or the timeout expires."""
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -26,6 +31,19 @@ def _pump(app, until=None, timeout: float = 30.0) -> bool:
             return True
         time.sleep(0.01)
     return False
+
+
+def _settled(app, produced) -> bool:
+    """Idle *and* something actually came out.
+
+    Waiting on ``not app.tasks.busy`` alone is ambiguous: it is equally true
+    before a task is submitted and after it finishes. If the panel returned
+    early — a validation error, or run() declining because another operation was
+    in flight — the wait succeeds instantly and the test then asserts against
+    stale widget contents. That is what made two GUI tests fail on CI while
+    passing locally.
+    """
+    return not app.tasks.busy and bool(produced())
 
 
 def _choose(chooser, name: str) -> None:
@@ -137,6 +155,10 @@ class GuiTestCase(unittest.TestCase):
     def banner_text(self, banner) -> str:
         return banner._label.cget("text")
 
+    def await_result(self, produced, message="the operation produced nothing"):
+        """Wait for the worker to finish *and* for a visible result to appear."""
+        self.assertTrue(_pump(self.app, lambda: _settled(self.app, produced)), message)
+
 
 class TestStartup(GuiTestCase):
     def test_window_and_panels(self):
@@ -165,7 +187,8 @@ class TestIdentitiesPanel(GuiTestCase):
         self.dialogs.ask_new_identity = lambda *a, **k: {
             "name": "carol", "comment": "Carol", "passphrase": "pw"}
         self.identities._generate()
-        self.assertTrue(_pump(self.app))
+        self.await_result(lambda: self.app.keyring.get("carol"),
+                          "carol was never created")
         self.assertIn("carol", {i.name for i in self.app.keyring.scan()})
         self.assertEqual(self.identities._selected, "carol")
 
@@ -192,7 +215,8 @@ class TestIdentitiesPanel(GuiTestCase):
         self.assertFalse(self.app.keyring.is_unlocked("alice"))
 
         self.identities._toggle_lock()  # ask_passphrase answers "pw"
-        self.assertTrue(_pump(self.app))
+        self.await_result(lambda: self.app.keyring.is_unlocked("alice"),
+                          "alice never unlocked")
         self.assertTrue(self.app.keyring.is_unlocked("alice"))
 
     def test_import_public(self):
@@ -222,13 +246,18 @@ class TestTextEncryption(GuiTestCase):
         panel._mode.set("Text")
         panel._switch_mode("Text")
         panel._input_text.set(text)
+        panel._output_text.set("")          # never assert against stale output
+        panel._banner.clear()
         panel._recipients.select(recipients)
         if signer:
             _choose(panel._signer, signer)
         else:
             panel._signer.set(panel._signer.NONE_LABEL)
         panel._encrypt()
-        self.assertTrue(_pump(self.app))
+        produced = lambda: panel._output_text.get() or self.banner_text(panel._banner)
+        self.assertTrue(_pump(self.app, lambda: _settled(self.app, produced)),
+                        "encryption produced nothing: banner=%r"
+                        % self.banner_text(panel._banner))
         return panel._output_text.get()
 
     def _decrypt_text(self, sealed, key, expected=None):
@@ -236,13 +265,17 @@ class TestTextEncryption(GuiTestCase):
         panel._mode.set("Text")
         panel._switch_mode("Text")
         panel._input_text.set(sealed)
+        panel._output_text.set("")
+        panel._banner.clear()
         _choose(panel._key, key)
         if expected:
             _choose(panel._expected, expected)
         else:
             panel._expected.set(panel._expected.NONE_LABEL)
         panel._decrypt()
-        self.assertTrue(_pump(self.app))
+        produced = lambda: panel._output_text.get() or self.banner_text(panel._banner)
+        self.assertTrue(_pump(self.app, lambda: _settled(self.app, produced)),
+                        "decryption produced nothing")
         return panel._output_text.get(), self.banner_text(panel._banner)
 
     def test_full_signed_cycle(self):
@@ -327,8 +360,9 @@ class TestFileEncryption(GuiTestCase):
         panel._output_file.set(enc)
         panel._recipients.select(["bob"])
         _choose(panel._signer, "alice")
+        panel._banner.clear()
         panel._encrypt()
-        self.assertTrue(_pump(self.app))
+        self.await_result(lambda: self.banner_text(panel._banner))
         self.assertTrue(os.path.exists(enc), self.banner_text(panel._banner))
         self.assertIn("Done", self.banner_text(panel._banner))
 
@@ -339,8 +373,9 @@ class TestFileEncryption(GuiTestCase):
         panel._output_file.set(dec)
         _choose(panel._key, "bob")
         _choose(panel._expected, "alice")
+        panel._banner.clear()
         panel._decrypt()
-        self.assertTrue(_pump(self.app))
+        self.await_result(lambda: self.banner_text(panel._banner))
         with open(dec, "rb") as fh:
             self.assertEqual(fh.read(), content)
         self.assertIn("Valid signature", self.banner_text(panel._banner))
@@ -368,8 +403,9 @@ class TestFileEncryption(GuiTestCase):
         panel._output_file.set(enc)
         panel._recipients.select(["bob"])
         _choose(panel._signer, "alice")
+        panel._banner.clear()
         panel._encrypt()
-        self.assertTrue(_pump(self.app))
+        self.await_result(lambda: self.banner_text(panel._banner))
 
         panel = self.decrypt
         panel._mode.set("File")
@@ -404,16 +440,18 @@ class TestSignPanel(GuiTestCase):
         panel._sign_input.set(path)
         panel._sign_output.set(sig)
         _choose(panel._signer, "alice")
+        panel._sign_banner.clear()
         panel._sign()
-        self.assertTrue(_pump(self.app))
+        self.await_result(lambda: self.banner_text(panel._sign_banner))
         self.assertTrue(os.path.exists(sig), self.banner_text(panel._sign_banner))
 
         panel._verify_input.set(path)
         panel._verify_sig.set(sig)
         panel._verify_text.set("")
         _choose(panel._expected, "alice")
+        panel._verify_banner.clear()
         panel._verify()
-        self.assertTrue(_pump(self.app))
+        self.await_result(lambda: self.banner_text(panel._verify_banner))
         self.assertIn("VALID", self.banner_text(panel._verify_banner))
 
     def test_file_modified_after_signing(self):
@@ -426,8 +464,9 @@ class TestSignPanel(GuiTestCase):
         panel._sign_input.set(path)
         panel._sign_output.set(sig)
         _choose(panel._signer, "alice")
+        panel._sign_banner.clear()
         panel._sign()
-        self.assertTrue(_pump(self.app))
+        self.await_result(lambda: self.banner_text(panel._sign_banner))
 
         with open(path, "ab") as fh:
             fh.write(b" altered")
@@ -436,8 +475,9 @@ class TestSignPanel(GuiTestCase):
         panel._verify_sig.set(sig)
         panel._verify_text.set("")
         panel._expected.set(panel._expected.NONE_LABEL)
+        panel._verify_banner.clear()
         panel._verify()
-        self.assertTrue(_pump(self.app))
+        self.await_result(lambda: self.banner_text(panel._verify_banner))
         self.assertIn("invalid", self.banner_text(panel._verify_banner).lower())
 
 

@@ -122,13 +122,29 @@ class RecipientPicker(ctk.CTkScrollableFrame):
     def __init__(self, master, height: int = 150) -> None:
         super().__init__(master, height=height, label_text="Recipients")
         self._vars: dict = {}
+        self._shape: Optional[tuple] = None
         self._empty: Optional[ctk.CTkLabel] = None
 
+    @staticmethod
+    def _shape_of(identities: List[Identity]) -> tuple:
+        return tuple((i.name, i.fingerprint, i.has_private) for i in identities)
+
     def set_identities(self, identities: List[Identity]) -> None:
+        # This runs after every operation, via refresh_identities(). Rebuilding
+        # the rows each time churned through a StringVar per identity, and those
+        # are Tk objects: when one is garbage-collected on a worker thread its
+        # __del__ touches Tk from the wrong thread and prints
+        # "main thread is not in main loop". Skipping the rebuild when nothing
+        # changed removes the churn entirely.
+        shape = self._shape_of(identities)
+        if shape == self._shape:
+            return
+
         selected = set(self.selected_names())
         for child in list(self.winfo_children()):
             child.destroy()
         self._vars = {}
+        self._shape = shape
 
         if not identities:
             self._empty = ctk.CTkLabel(
