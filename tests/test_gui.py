@@ -172,7 +172,7 @@ class TestStartup(GuiTestCase):
     def test_identities_propagate_to_panels(self):
         names = {i.name for i in self.app.keyring.scan()}
         self.assertEqual(names, {"alice", "bob"})
-        self.assertEqual(set(self.encrypt._recipients._vars), {"alice", "bob"})
+        self.assertEqual(set(self.encrypt._recipients._boxes), {"alice", "bob"})
         self.assertEqual(set(self.decrypt._key._labels.values()), {"alice", "bob"})
 
     def test_keyring_on_disk(self):
@@ -259,9 +259,18 @@ class TestTextEncryption(GuiTestCase):
         panel._encrypt()
         produced = lambda: panel._output_text.get() or self.banner_text(panel._banner)
         self.assertTrue(_pump(self.app, lambda: _settled(self.app, produced)),
-                        "encryption produced nothing: banner=%r"
+                        "encryption never finished: banner=%r"
                         % self.banner_text(panel._banner))
-        return panel._output_text.get()
+        sealed = panel._output_text.get()
+        # The wait is satisfied by a banner as well as by output, so a *failed*
+        # encryption also ends it. Without this check the test would carry an
+        # empty string into the decrypt step and report the mismatch there,
+        # naming the symptom instead of the cause.
+        self.assertTrue(
+            sealed.startswith("-----BEGIN CRSYS MESSAGE-----"),
+            "encryption failed: banner=%r, output=%r"
+            % (self.banner_text(panel._banner), sealed[:120]))
+        return sealed
 
     def _decrypt_text(self, sealed, key, expected=None):
         panel = self.decrypt
@@ -278,7 +287,9 @@ class TestTextEncryption(GuiTestCase):
         panel._decrypt()
         produced = lambda: panel._output_text.get() or self.banner_text(panel._banner)
         self.assertTrue(_pump(self.app, lambda: _settled(self.app, produced)),
-                        "decryption produced nothing")
+                        "decryption never finished: busy=%s, banner=%r, status=%r"
+                        % (self.app.tasks.busy, self.banner_text(panel._banner),
+                           self.app.status._label.cget("text")))
         return panel._output_text.get(), self.banner_text(panel._banner)
 
     def test_full_signed_cycle(self):

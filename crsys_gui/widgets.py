@@ -121,7 +121,7 @@ class RecipientPicker(ctk.CTkScrollableFrame):
 
     def __init__(self, master, height: int = 150) -> None:
         super().__init__(master, height=height, label_text="Recipients")
-        self._vars: dict = {}
+        self._boxes: dict = {}
         self._shape: Optional[tuple] = None
         self._empty: Optional[ctk.CTkLabel] = None
 
@@ -130,12 +130,16 @@ class RecipientPicker(ctk.CTkScrollableFrame):
         return tuple((i.name, i.fingerprint, i.has_private) for i in identities)
 
     def set_identities(self, identities: List[Identity]) -> None:
-        # This runs after every operation, via refresh_identities(). Rebuilding
-        # the rows each time churned through a StringVar per identity, and those
-        # are Tk objects: when one is garbage-collected on a worker thread its
-        # __del__ touches Tk from the wrong thread and prints
-        # "main thread is not in main loop". Skipping the rebuild when nothing
-        # changed removes the churn entirely.
+        # Two things keep Tk objects from being churned here, and both matter.
+        #
+        # This runs after every operation, via refresh_identities(), so the
+        # rebuild is skipped when the identity list has not actually changed.
+        #
+        # And the checkboxes carry their own state rather than each owning a
+        # StringVar. A StringVar is a Tk object with a __del__ that talks to the
+        # interpreter, so collecting one on a worker thread raises "main thread
+        # is not in main loop" from inside the garbage collector -- at a moment
+        # nobody chose and nothing can catch.
         shape = self._shape_of(identities)
         if shape == self._shape:
             return
@@ -143,7 +147,7 @@ class RecipientPicker(ctk.CTkScrollableFrame):
         selected = set(self.selected_names())
         for child in list(self.winfo_children()):
             child.destroy()
-        self._vars = {}
+        self._boxes = {}
         self._shape = shape
 
         if not identities:
@@ -156,22 +160,25 @@ class RecipientPicker(ctk.CTkScrollableFrame):
             return
 
         for identity in identities:
-            var = ctk.StringVar(value="on" if identity.name in selected else "off")
             suffix = "  (you)" if identity.has_private else ""
             box = ctk.CTkCheckBox(
                 self, text="%s%s\n%s" % (identity.name, suffix, identity.fingerprint),
-                variable=var, onvalue="on", offvalue="off",
                 font=ctk.CTkFont(size=theme.SMALL_SIZE))
             box.pack(anchor="w", padx=theme.PAD_S, pady=3)
-            self._vars[identity.name] = var
+            if identity.name in selected:
+                box.select()
+            self._boxes[identity.name] = box
 
     def selected_names(self) -> List[str]:
-        return [name for name, var in self._vars.items() if var.get() == "on"]
+        return [name for name, box in self._boxes.items() if box.get()]
 
     def select(self, names: Iterable[str]) -> None:
         wanted = set(names)
-        for name, var in self._vars.items():
-            var.set("on" if name in wanted else "off")
+        for name, box in self._boxes.items():
+            if name in wanted:
+                box.select()
+            else:
+                box.deselect()
 
 
 class Banner(ctk.CTkFrame):
