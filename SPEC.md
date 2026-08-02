@@ -79,6 +79,18 @@ list are ordinary points, and no blocklist of encodings can be complete. The
 control that matters is the output check in §3.2, which an implementation MUST
 perform.
 
+**An implementation MUST reject an `ed25519_pub` that is one of the eight
+small-order points of Ed25519.** This one is not a convenience. With the
+identity point as the public key, the signature `(R = identity, S = 0)`
+satisfies the verification equation for *every* message — a universal forgery
+requiring no private key whatsoever. Several libraries, OpenSSL among them,
+accept such keys and verify such signatures. The eight encodings are listed in
+`crsys/keys.py`; the principled form of the check is `[8]A != identity`.
+
+This matters because the signer's public key is read out of the container
+trailer (§3.5), so it is chosen by whoever produced the message. See "Taming the
+many EdDSAs" (Chalkias, Garillot, Nikolaenko) for the full treatment.
+
 ### 2.2 Private key encoding
 
 ```
@@ -99,6 +111,12 @@ Displayed as lowercase hex in four dash-separated groups of four:
 `a1b2-c3d4-e5f6-0718`. The fingerprint is a **display and lookup aid only**. It
 MUST NOT be used as a security decision on its own — 64 bits is not
 collision-resistant. Comparisons that matter MUST use the full 64-byte key.
+
+Concretely: attributing a verified signature to a named contact is an identity
+decision, and an implementation MUST make it by comparing the full public key.
+Matching on the fingerprint would decide identity on 64 bits, and an attacker
+has free choice of the X25519 half, so they can grind for a key whose
+fingerprint collides with one already in the victim's keyring.
 
 ---
 
@@ -243,6 +261,16 @@ signature = Ed25519_sign(signer_ed25519_sk,
 
 `SHA256(plaintext)` is over the concatenated plaintext of the data chunks only,
 excluding the trailer.
+
+**Why SHA-256 and not the full plaintext.** Pure Ed25519 needs two passes over
+the message, which a streaming design cannot do — this is the same reason
+RFC 8032 defines Ed25519ph. Pre-hashing caps collision resistance at 2¹²⁸ rather
+than the 2²⁵⁶ pure Ed25519 would give, which matters only for a signer wishing
+to repudiate their own message later: a third party forging a signature would
+need a *second preimage* (2²⁵⁶), not a collision. Since Ed25519's own security
+is about 2¹²⁶, SHA-256 is not the weak link; the pairing matches the way NIST
+pairs P-256 with SHA-256. An implementation MUST NOT substitute another hash:
+the signed bytes are part of the format.
 
 A receiver MUST reject a signed container whose trailer is not exactly 128
 bytes, and MUST reject an unsigned container whose trailer is non-empty.

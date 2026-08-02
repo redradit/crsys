@@ -252,7 +252,10 @@ class DecryptPanel(Panel):
             return
 
         fingerprint = info.signer_fingerprint
-        identity = self.app.keyring.find_by_fingerprint(fingerprint)
+        # Resolved by full public key, never by fingerprint: putting a name next
+        # to a signature is an identity decision, and 64 bits is not enough to
+        # make one on.
+        identity = self.app.keyring.find_by_public_key(info.signer)
         if identity is not None:
             self._banner.show(
                 "Valid signature from \"%s\"  (%s)%s"

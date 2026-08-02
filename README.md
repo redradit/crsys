@@ -268,9 +268,11 @@ the container is malleable. Only `CrsysError` is permitted to escape; a
 `ValueError` or `IndexError` reaching the caller means malformed input got into
 code that assumed otherwise.
 
-### Defects this testing has found
+### Defects found so far
 
-All eight were found by the tests, not by reading the code:
+Eleven. The first eight came from testing rather than from reading the code; the
+last three came from comparing the construction against RFC 9180 and the
+published analysis of Ed25519, which no amount of testing would have surfaced.
 
 1. the signature did not cover the X25519 half of the sender's identity, which
    allowed a valid signature to be re-attributed to a different fingerprint;
@@ -290,7 +292,24 @@ All eight were found by the tests, not by reading the code:
    file into a denial of service on open;
 8. Argon2 requires `m >= 8*p`; values inside their own ranges could still
    violate it, and argon2-cffi raised `HashingError` straight through the error
-   contract *(fuzzer)*.
+   contract *(fuzzer)*;
+9. **a universal signature forgery.** With the Ed25519 identity point as the
+   signer's public key, the signature `(R = identity, S = 0)` verifies for
+   *every* message. The signer key is read from the container trailer, so an
+   attacker chooses it, and OpenSSL verifies such signatures without complaint.
+   Anyone could produce a container that reported a valid signature while
+   holding no private key at all *(found by comparing against "Taming the many
+   EdDSAs")*;
+10. the GUI attributed a verified signature to a contact by matching the 64-bit
+    fingerprint, which SPEC.md itself says must not decide anything. Combined
+    with 9, a feasible grind produced a forged key whose fingerprint matched a
+    real contact — full impersonation in the interface. Identity is now decided
+    on all 64 bytes;
+11. the X25519 shared secret was never checked for the all-zero value, which
+    RFC 9180 §7.1.4 makes a MUST. OpenSSL happens to refuse those points, so
+    nothing was exploitable — but SPEC.md documented only an input blocklist, so
+    an independent implementation following it with a laxer backend would have
+    been insecure *and* conformant.
 
 ## Layout
 

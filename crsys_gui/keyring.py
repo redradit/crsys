@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from crsys import KeyPair, PublicKey
+from crsys._util import ct_eq
 from crsys.errors import CrsysError
 
 DEFAULT_DIR = os.path.join(os.path.expanduser("~"), ".crsys")
@@ -119,8 +120,30 @@ class Keyring:
                 return identity
         return None
 
+    def find_by_public_key(self, public_key: PublicKey) -> Optional[Identity]:
+        """Resolve a key to a keyring entry, comparing all 64 bytes.
+
+        This is what must be used before putting a name next to a verified
+        signature. Matching on the fingerprint instead would decide identity on
+        64 bits, and a 64-bit collision is not out of reach for someone willing
+        to grind: the attacker has free choice of the X25519 half, so they can
+        search for one whose fingerprint matches a name already in your keyring.
+        The fingerprint is for humans to compare out of band, not for the
+        software to make a decision on.
+        """
+        raw = public_key.to_bytes()
+        for identity in self.scan():
+            if identity.public_key and ct_eq(identity.public_key.to_bytes(), raw):
+                return identity
+        return None
+
     def find_by_fingerprint(self, fingerprint: str) -> Optional[Identity]:
-        """Used to show "signed by Alice" instead of a bare fingerprint."""
+        """Look up by fingerprint alone -- a *hint* only.
+
+        Only for cases where a fingerprint is all that exists, such as the
+        8-byte recipient hints in a container header. Never use it to attribute
+        a signature; use :meth:`find_by_public_key` for that.
+        """
         for identity in self.scan():
             if identity.public_key and identity.public_key.fingerprint_hex == fingerprint:
                 return identity

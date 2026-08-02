@@ -146,6 +146,67 @@ class TestSurreptitiousForwarding(unittest.TestCase):
             decrypt_bytes(forged, bob)
 
 
+class TestSmallOrderSignerKey(unittest.TestCase):
+    """A small-order Ed25519 key must never be accepted as a signer.
+
+    With the identity point as the public key, the signature (R=identity, S=0)
+    satisfies the verification equation for every message, so anyone could
+    produce a container that reports a "valid signature" without holding any
+    private key. OpenSSL verifies such signatures happily; the rejection has to
+    happen here.
+    """
+
+    IDENTITY = bytes.fromhex(
+        "0100000000000000000000000000000000000000000000000000000000000000")
+
+    SMALL_ORDER = [
+        "0100000000000000000000000000000000000000000000000000000000000000",
+        "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000080",
+        "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+        "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+        "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+        "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+    ]
+
+    def test_all_small_order_points_rejected(self):
+        good_x = KeyPair.generate().public_key.x25519
+        for encoded in self.SMALL_ORDER:
+            with self.subTest(point=encoded[:16]), self.assertRaises(CrsysError):
+                PublicKey(good_x, bytes.fromhex(encoded))
+
+    def test_rejected_when_parsed_from_bytes(self):
+        good_x = KeyPair.generate().public_key.x25519
+        with self.assertRaises(CrsysError):
+            PublicKey.from_bytes(good_x + self.IDENTITY)
+
+    def test_universal_forgery_is_refused_in_a_container(self):
+        """The end-to-end version: forge the trailer and try to pass it off."""
+        alice, bob = KeyPair.generate(), KeyPair.generate()
+        sealed = encrypt_bytes(b"transfer 10 EUR", [bob.public_key], signer=alice,
+                               chunk_size=1024)
+        header, hdr = Header.read_from(io.BytesIO(sealed))
+        cek, _ = _decapsulate(header, bob)
+        aead = aead_for(header.suite, cek)
+
+        chunks = _split_chunks(sealed[len(hdr):])
+        last = len(chunks) - 1
+        forged_trailer = (alice.public_key.x25519 + self.IDENTITY  # signer key
+                          + self.IDENTITY + bytes(32))            # R=identity, S=0
+        self.assertEqual(len(forged_trailer), 128)
+        chunks[-1] = aead.encrypt(chunk_nonce(last, True), forged_trailer, hdr)
+        forged = hdr + b"".join(len(c).to_bytes(4, "big") + c for c in chunks)
+
+        with self.assertRaises(CrsysError):
+            decrypt_bytes(forged, bob)
+
+    def test_a_normal_signer_key_still_works(self):
+        alice, bob = KeyPair.generate(), KeyPair.generate()
+        sealed = encrypt_bytes(b"ok", [bob.public_key], signer=alice)
+        self.assertEqual(decrypt_bytes(sealed, bob, alice.public_key), b"ok")
+
+
 def _split_chunks(payload: bytes):
     """Split the payload into its chunks (tests only; the CLI never needs this)."""
     out, i = [], 0

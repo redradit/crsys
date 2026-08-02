@@ -193,7 +193,7 @@ class SignPanel(Panel):
 
         def done(signer):
             fingerprint = signer.fingerprint_hex
-            identity = self.app.keyring.find_by_fingerprint(fingerprint)
+            identity = self.app.keyring.find_by_public_key(signer)
             if identity is not None:
                 self._verify_banner.show(
                     "Signature VALID from \"%s\"  (%s)" % (identity.name, fingerprint),

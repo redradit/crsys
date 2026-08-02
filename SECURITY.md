@@ -6,11 +6,16 @@ CRSYS has **not been independently audited**. It was written carefully, it uses
 only standard primitives, and it has a test suite that deliberately attacks it —
 but that is not the same thing as review by people whose job is breaking things.
 
-Eight real defects have been found so far, every one by testing rather than by
-reading the code; four came from the mutation fuzzer alone. They are listed in
-the [README](README.md#defects-this-testing-has-found). That record is the
-argument for an audit, not against one: code that looks correct to its author
-and to reviewers has still been wrong eight times.
+Eleven real defects have been found so far. Four came from the mutation fuzzer,
+and the two most serious came from reading RFC 9180 and the EdDSA literature and
+checking what the code actually did against them — not from testing at all. They
+are listed in the [README](README.md#defects-this-testing-has-found).
+
+That record is the argument for an audit, not against one. The worst of the
+eleven was a universal signature forgery that had survived every test, every
+fuzzing campaign, and repeated readings of the code, and was found only by
+comparing the construction against published analysis of Ed25519. There is no
+reason to believe that process is finished.
 
 For data whose compromise would have serious consequences, use
 [age](https://age-encryption.org) or GnuPG. Their value is not the algorithm; it
@@ -45,7 +50,8 @@ from [pyca/cryptography](https://cryptography.io), which is backed by OpenSSL.
 | Key commitment | `cek_commit` prevents a container that decrypts to different plaintexts under different keys (invisible salamanders) |
 | No nonce reuse | Nonces are derived or counted, never random, under a key used exactly once |
 | KDF downgrade resistance | The scrypt/Argon2 parameters in the key file are AAD |
-| Degenerate keys rejected | Curve25519 small-order points are blocklisted |
+| Degenerate keys rejected | X25519 output checked for all-zero (RFC 9180 §7.1.4); small-order Ed25519 keys refused, closing a universal forgery |
+| Identity decided on full keys | A verified signature is attributed to a contact by comparing all 64 bytes, never by the 64-bit fingerprint |
 | Bounded resource use | Header fields are validated before any allocation; KDF parameters are bounded by resulting memory, not just per-parameter; armored input is capped |
 
 An attacker holding only the ciphertext has no known path in: it would require

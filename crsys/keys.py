@@ -96,6 +96,14 @@ class PublicKey:
         # constant, predictable shared secret.
         if x_pub in _SMALL_ORDER_POINTS:
             raise FormatError("small-order X25519 public key, rejected")
+        # The Ed25519 half needs its own check, for a sharper reason. With the
+        # identity point as the public key, the signature (R=identity, S=0)
+        # satisfies the verification equation for *every* message: a universal
+        # forgery that needs no private key at all. OpenSSL accepts such keys and
+        # verifies such signatures, so this has to be caught here. See "Taming
+        # the many EdDSAs", Chalkias, Garillot and Nikolaenko.
+        if ed_pub in _ED25519_SMALL_ORDER_POINTS:
+            raise FormatError("small-order Ed25519 public key, rejected")
         # Validate the encoding up front so errors surface on load rather than
         # halfway through an encryption.
         Ed25519PublicKey.from_public_bytes(ed_pub)
@@ -448,6 +456,24 @@ def _atomic_write_text(path: str, text: str, private: bool = False) -> None:
             os.chmod(path, 0o600)
         except OSError:  # pragma: no cover - POSIX modes are advisory on Windows
             pass
+
+
+# The eight small-order points of Ed25519, in encoded form. A blocklist is a
+# blunt instrument, but the small-order subgroup here has exactly eight elements
+# and these are their canonical encodings. The principled check would be
+# "[8]A != identity", which needs point arithmetic the library does not expose.
+_ED25519_SMALL_ORDER_POINTS = frozenset(
+    bytes.fromhex(h) for h in (
+        "0100000000000000000000000000000000000000000000000000000000000000",
+        "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000080",
+        "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+        "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+        "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+        "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+    )
+)
 
 
 # Small-order points of Curve25519 (RFC 7748 section 6.1). Using one of these as
