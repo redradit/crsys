@@ -698,7 +698,7 @@ class TestDialogValidation(GuiTestCase):
         self.assertIsNotNone(result)
 
     def test_import_public_rejects_junk(self):
-        for junk in ("not a key", "crsys1zzzz", "\x00", "-----BEGIN CRSYS PUBLIC KEY-----"):
+        for junk in ("not a key", "crsys1zzzz", "-----BEGIN CRSYS PUBLIC KEY-----"):
             def fill(d, j=junk):
                 d._name.insert(0, "dave")
                 d._text.insert("0.0", j)
@@ -708,6 +708,27 @@ class TestDialogValidation(GuiTestCase):
                 result, error = self._import_public(fill)
                 self.assertIsNone(result)
                 self.assertIn("Invalid key", error)
+
+    def test_import_public_rejects_a_nul_byte(self):
+        """Assert the outcome, not which message explains it.
+
+        Whether a NUL survives insertion into a Tk text widget depends on the
+        Tcl version the Python build ships with: from 3.12 it reaches the parser
+        and the dialog reports an invalid key, before that it is dropped and the
+        box reads as empty, giving the "paste a key" message instead. Both are
+        correct refusals. Pinning the wording made this test assert Tcl's
+        behaviour rather than the validation, and it failed on every job below
+        3.12. The library-level handling of NUL is covered where it belongs, in
+        test_keys.test_parse_rejects_junk_as_format_error.
+        """
+        def fill(d):
+            d._name.insert(0, "dave")
+            d._text.insert("0.0", "\x00")
+            d._ok()
+
+        result, error = self._import_public(fill)
+        self.assertIsNone(result)
+        self.assertTrue(error, "a refusal must tell the user something")
 
     def test_import_public_rejects_empty_text(self):
         def fill(d):
