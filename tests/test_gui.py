@@ -709,26 +709,13 @@ class TestDialogValidation(GuiTestCase):
                 self.assertIsNone(result)
                 self.assertIn("Invalid key", error)
 
-    def test_import_public_rejects_a_nul_byte(self):
-        """Assert the outcome, not which message explains it.
-
-        Whether a NUL survives insertion into a Tk text widget depends on the
-        Tcl version the Python build ships with: from 3.12 it reaches the parser
-        and the dialog reports an invalid key, before that it is dropped and the
-        box reads as empty, giving the "paste a key" message instead. Both are
-        correct refusals. Pinning the wording made this test assert Tcl's
-        behaviour rather than the validation, and it failed on every job below
-        3.12. The library-level handling of NUL is covered where it belongs, in
-        test_keys.test_parse_rejects_junk_as_format_error.
-        """
-        def fill(d):
-            d._name.insert(0, "dave")
-            d._text.insert("0.0", "\x00")
-            d._ok()
-
-        result, error = self._import_public(fill)
-        self.assertIsNone(result)
-        self.assertTrue(error, "a refusal must tell the user something")
+    # There is deliberately no NUL byte case here, and it should not be added
+    # back. Pushing a NUL through a Tk text widget tests the toolkit, not this
+    # code: whether it survives depends on the bundled Tcl version, and on macOS
+    # it left the widget in a state that dragged the rest of the class from 19
+    # seconds to over four minutes. PublicKey.parse's handling of NUL is real
+    # behaviour and is tested directly, without a GUI, in
+    # test_keys.test_parse_rejects_junk_as_format_error.
 
     def test_import_public_rejects_empty_text(self):
         def fill(d):
