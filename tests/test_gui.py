@@ -12,6 +12,7 @@ import io
 import os
 import tempfile
 import time
+import traceback
 import unittest
 
 from _ctx import CheapKdf
@@ -22,18 +23,53 @@ from crsys.errors import PassphraseError
 
 # CI runners are shared and run this matrix fifteen ways at once, so wall-clock
 # budgets have to be generous. The tests do not depend on the duration.
-PUMP_TIMEOUT = 60.0
+#
+# "Generous" is not a guess. On one run the fuzz job took 283s where it normally
+# takes 27s: the same commit, ten times slower, because the fleet was
+# oversubscribed. A budget that assumes a quiet machine turns that into a red
+# build, and a red build that means "the runner was busy" is worse than no
+# signal at all -- it teaches you to ignore the colour.
+PUMP_TIMEOUT = float(os.environ.get("CRSYS_TEST_TIMEOUT", "60"))
+
+
+# How long the last wait actually took, so a failure can say whether it hit the
+# timeout or gave up on something else. CI failures here have looked like
+# timeouts and looked like slow runners, and the message could not tell them
+# apart -- which left the diagnosis to guesswork twice.
+_LAST_WAIT: dict = {"elapsed": 0.0, "timeout": 0.0}
 
 
 def _pump(app, until=None, timeout: float = PUMP_TIMEOUT) -> bool:
     """Run the event loop until the condition holds or the timeout expires."""
-    deadline = time.time() + timeout
+    started = time.time()
+    deadline = started + timeout
+    ok = False
     while time.time() < deadline:
         app.update()
+        if _CALLBACK_ERRORS:
+            break
         if until() if until is not None else not app.tasks.busy:
-            return True
+            ok = True
+            break
         time.sleep(0.01)
-    return False
+    _LAST_WAIT["elapsed"] = time.time() - started
+    _LAST_WAIT["timeout"] = timeout
+    return ok
+
+
+# TaskRunner._safe deliberately swallows exceptions raised by a callback, so
+# that one faulty callback cannot stall the queue for the whole application.
+# Under test that is a trap: the operation completes, nothing appears on screen,
+# and sixty seconds later the wait reports a timeout and blames the clock. The
+# traceback goes to stderr, where it is one line among a fifteen-job matrix.
+# Record them here instead, and let the wait fail with the real cause.
+_CALLBACK_ERRORS: list = []
+
+
+def _waited() -> str:
+    if _CALLBACK_ERRORS:
+        return "a task callback raised:\n%s" % "\n".join(_CALLBACK_ERRORS)
+    return "waited %.1fs of %.0fs" % (_LAST_WAIT["elapsed"], _LAST_WAIT["timeout"])
 
 
 def _settled(app, produced) -> bool:
@@ -69,6 +105,23 @@ _ENV = {}
 def setUpModule():
     from crsys_gui import dialogs
     from crsys_gui.app import CrsysApp
+    from crsys_gui.tasks import TaskRunner
+
+    original_safe = TaskRunner._safe
+
+    def recording_safe(callback, *args) -> None:
+        if callback is None:
+            return
+        try:
+            callback(*args)
+        except Exception:
+            # Swallowed exactly as in production; only now it leaves a trace
+            # the assertion can quote.
+            _CALLBACK_ERRORS.append(traceback.format_exc())
+
+    TaskRunner._safe = staticmethod(recording_safe)
+    _ENV["runner"] = TaskRunner
+    _ENV["safe"] = original_safe
 
     _ENV["dialogs"] = dialogs
     _ENV["kdf"] = CheapKdf()
@@ -97,6 +150,8 @@ def setUpModule():
 
 
 def tearDownModule():
+    if "runner" in _ENV:
+        _ENV["runner"]._safe = staticmethod(_ENV["safe"])
     dialogs = _ENV.get("dialogs")
     if dialogs is not None:
         for name, original in _ENV["originals"].items():
@@ -119,6 +174,7 @@ class GuiTestCase(unittest.TestCase):
         self.dialogs = _ENV["dialogs"]
         self.dir = _ENV["dir"]
         self.errors = []
+        del _CALLBACK_ERRORS[:]
 
         # Automatic answers standing in for the modal windows.
         self.dialogs.ask_passphrase = lambda *a, **k: "pw"
@@ -160,7 +216,8 @@ class GuiTestCase(unittest.TestCase):
 
     def await_result(self, produced, message="the operation produced nothing"):
         """Wait for the worker to finish *and* for a visible result to appear."""
-        self.assertTrue(_pump(self.app, lambda: _settled(self.app, produced)), message)
+        self.assertTrue(_pump(self.app, lambda: _settled(self.app, produced)),
+                        "%s (%s)" % (message, _waited()))
 
 
 class TestStartup(GuiTestCase):
@@ -299,8 +356,8 @@ class TestTextEncryption(GuiTestCase):
         panel._encrypt()
         produced = lambda: panel._output_text.get() or self.banner_text(panel._banner)
         self.assertTrue(_pump(self.app, lambda: _settled(self.app, produced)),
-                        "encryption never finished: banner=%r"
-                        % self.banner_text(panel._banner))
+                        "encryption never finished (%s): banner=%r"
+                        % (_waited(), self.banner_text(panel._banner)))
         sealed = panel._output_text.get()
         # The wait is satisfied by a banner as well as by output, so a *failed*
         # encryption also ends it. Without this check the test would carry an
@@ -327,8 +384,9 @@ class TestTextEncryption(GuiTestCase):
         panel._decrypt()
         produced = lambda: panel._output_text.get() or self.banner_text(panel._banner)
         self.assertTrue(_pump(self.app, lambda: _settled(self.app, produced)),
-                        "decryption never finished: busy=%s, banner=%r, status=%r"
-                        % (self.app.tasks.busy, self.banner_text(panel._banner),
+                        "decryption never finished (%s): busy=%s, banner=%r, status=%r"
+                        % (_waited(), self.app.tasks.busy,
+                           self.banner_text(panel._banner),
                            self.app.status._label.cget("text")))
         return panel._output_text.get(), self.banner_text(panel._banner)
 
@@ -1287,6 +1345,38 @@ class TestInterfaceSecurity(GuiTestCase):
         self.assertEqual(tab, "Identities")
         self.assertEqual(appearance, "System")
         self.app._tabs.set(tab)
+
+
+class TestHarness(GuiTestCase):
+    """The safety net that makes the other tests diagnosable.
+
+    A wait that reports a timeout when the real cause was an exception in a
+    callback sent two CI investigations down the wrong road. The net that
+    prevents that is only worth having if it is known to work, so it is tested
+    like anything else.
+    """
+
+    def test_a_raising_callback_is_reported_not_waited_out(self):
+        def boom(_result):
+            raise RuntimeError("callback blew up")
+
+        started = time.time()
+        self.app.tasks.submit(lambda report: "done", on_success=boom)
+        ok = _pump(self.app, lambda: False, timeout=10.0)
+        elapsed = time.time() - started
+
+        self.assertFalse(ok, "the wait should not claim success")
+        self.assertTrue(_CALLBACK_ERRORS, "the exception was lost")
+        self.assertIn("callback blew up", _waited())
+        # The point of the net: it gives up as soon as the cause is known
+        # instead of spending the whole budget.
+        self.assertLess(elapsed, 5.0, "gave up late: %.1fs" % elapsed)
+
+    def test_a_clean_wait_reports_the_duration(self):
+        self.app.tasks.submit(lambda report: "done")
+        self.assertTrue(_pump(self.app))
+        self.assertFalse(_CALLBACK_ERRORS)
+        self.assertRegex(_waited(), r"waited \d+\.\ds of \d+s")
 
 
 if __name__ == "__main__":
