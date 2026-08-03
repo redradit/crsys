@@ -207,10 +207,29 @@ cek_commit = HKDF(CEK, 32, LABEL_COMMIT)
 After recovering a candidate CEK, a receiver MUST recompute this and compare it
 against the header field in constant time, and MUST abort on mismatch.
 
-Neither ChaCha20-Poly1305 nor AES-GCM is key-committing. Without this field an
-attacker who knows two private keys can build one container that decrypts to two
-different valid plaintexts depending on which key opens it (the "invisible
-salamanders" attack).
+**Be precise about what this gives.** There are two different properties, and
+this field only provides the first:
+
+* it **validates that the CEK a receiver unwrapped is the one the sender used**.
+  Since only one value can match the single stored commitment, and finding a
+  second would need a SHA-256 collision, every recipient of a container is
+  forced onto the same content key;
+* it does **not** make the AEAD key-committing, and does not bind the key to the
+  message in the CMT sense. Neither ChaCha20-Poly1305 nor AES-GCM is committing,
+  and a commitment to the key does not change that.
+
+The relevant attack here is the multi-recipient case of invisible salamanders:
+handing two recipients different content keys so that one container decrypts to
+two different valid plaintexts. The argument that this field closes it is that
+with the CEK pinned by the commitment, the nonces fixed by the chunk counter and
+the AAD fixed as the header, nothing is left for an attacker to vary — the
+plaintext is fully determined.
+
+That argument is this document's, not a result from the literature, and it has
+not been formally verified. The distinction between the two properties above was
+raised by a reviewer on Cryptography Stack Exchange, who declined to rule on
+which one this construction actually achieves. Anyone needing full CMT security
+should assume it is not present.
 
 ### 3.4 Payload
 

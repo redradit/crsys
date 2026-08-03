@@ -323,7 +323,18 @@ published analysis of Ed25519, which no amount of testing would have surfaced.
     RFC 9180 §7.1.4 makes a MUST. OpenSSL happens to refuse those points, so
     nothing was exploitable — but SPEC.md documented only an input blocklist, so
     an independent implementation following it with a laxer backend would have
-    been insecure *and* conformant.
+    been insecure *and* conformant;
+12. **an overclaim in the security documentation, not a code defect.** SPEC.md
+    presented `cek_commit` as if it repaired the AEAD not being key-committing.
+    Validating that the right content key was unwrapped and binding the key to
+    the message are different properties, and only the first is present. Raised
+    by a reviewer on Cryptography Stack Exchange, and the first finding here to
+    come from a human rather than from testing or from reading a specification.
+
+An interface bug was also reported and fixed after release: the Import menu
+appeared but choosing an entry did nothing, because a hand-rolled popup destroyed
+itself on the mouse-down. Every test called the import handlers directly, so the
+menu was the one path with no coverage.
 
 ## Layout
 

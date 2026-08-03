@@ -6,16 +6,22 @@ CRSYS has **not been independently audited**. It was written carefully, it uses
 only standard primitives, and it has a test suite that deliberately attacks it —
 but that is not the same thing as review by people whose job is breaking things.
 
-Eleven real defects have been found so far. Four came from the mutation fuzzer,
-and the two most serious came from reading RFC 9180 and the EdDSA literature and
-checking what the code actually did against them — not from testing at all. They
-are listed in the [README](README.md#defects-this-testing-has-found).
+Twelve findings so far. Four came from the mutation fuzzer; two of the most
+serious came from reading RFC 9180 and the EdDSA literature and checking what the
+code actually did against them, not from testing at all. They are listed in the
+[README](README.md#defects-found-so-far).
 
-That record is the argument for an audit, not against one. The worst of the
-eleven was a universal signature forgery that had survived every test, every
-fuzzing campaign, and repeated readings of the code, and was found only by
-comparing the construction against published analysis of Ed25519. There is no
-reason to believe that process is finished.
+That record is the argument for an audit, not against one. The worst of them was
+a universal signature forgery that had survived every test, every fuzzing
+campaign, and repeated readings of the code, and was found only by comparing the
+construction against published analysis of Ed25519.
+
+The twelfth is the most instructive. A reviewer on Cryptography Stack Exchange
+pointed out that this very document was claiming a stronger property than the
+code provides: validating that the right content key was unwrapped is not the
+same as binding the key to the message. It took one outside expert about a day to
+find an overstated security claim here. There is no reason to believe that
+process is finished.
 
 For data whose compromise would have serious consequences, use
 [age](https://age-encryption.org) or GnuPG. Their value is not the algorithm; it
@@ -47,7 +53,7 @@ from [pyca/cryptography](https://cryptography.io), which is backed by OpenSSL.
 | Sender authenticity | Ed25519, with the signature also covering the header |
 | Anti-surreptitious-forwarding | The signature covers the recipient list, so a recipient cannot re-address the message |
 | Anti-identity-substitution | The signature covers the signer's *whole* public key, not just the Ed25519 half used to verify it |
-| Key commitment | `cek_commit` prevents a container that decrypts to different plaintexts under different keys (invisible salamanders) |
+| Content key validation | `cek_commit` forces every recipient onto the same content key, which closes the multi-recipient case of invisible salamanders. It is **not** full key-committing security — see [SPEC.md §3.3](SPEC.md) for what it does and does not give |
 | No nonce reuse | Nonces are derived or counted, never random, under a key used exactly once |
 | KDF downgrade resistance | The scrypt/Argon2 parameters in the key file are AAD |
 | Degenerate keys rejected | X25519 output checked for all-zero (RFC 9180 §7.1.4); small-order Ed25519 keys refused, closing a universal forgery |
