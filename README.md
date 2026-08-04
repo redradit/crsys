@@ -373,6 +373,11 @@ came from a stranger who read the specification.
     by a reviewer on Cryptography Stack Exchange, and the first finding here to
     come from a human rather than from testing or from reading a specification.
 
+**Findings 9, 10 and 11 landed after `v0.1.0` was tagged, and no release
+carried them.** That is its own defect — a fix nobody can download is not
+deployed — and it is recorded in the [changelog](CHANGELOG.md), with 0.1.0
+marked withdrawn.
+
 An interface bug was also reported and fixed after release: the Import menu
 appeared but choosing an entry did nothing, because a hand-rolled popup destroyed
 itself on the mouse-down. Every test called the import handlers directly, so the
@@ -405,6 +410,16 @@ SPEC.md                normative format specification
 SECURITY.md            threat model and known limitations
 CRSYS.pyw              double-click launcher for the GUI
 ```
+
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers running the tests, the lint bar, and
+the one rule that matters most: the wire format is frozen, so a change to the
+bytes is a new format version rather than a bug fix. Release history is in the
+[changelog](CHANGELOG.md).
+
+Findings against the protocol design are the most useful thing anyone can send —
+that is the part of this project nobody outside it has reviewed.
 
 ## License
 

@@ -1,5 +1,18 @@
 # Security
 
+## Do not use release 0.1.0
+
+The only release tagged so far, `v0.1.0`, **contains a universal signature
+forgery**: with the Ed25519 identity point as the signer's key, one fixed
+signature verifies every message, so a container from that version can claim to
+be signed by anyone. The fix landed thirteen commits after the tag and was never
+released, which is a release-management failure and is recorded as such in the
+[changelog](CHANGELOG.md).
+
+Confidentiality and integrity are unaffected in 0.1.0, and files encrypted with
+it stay readable — the format did not change. What cannot be trusted is any
+signature verdict it gives you.
+
 ## Status
 
 CRSYS has **not been independently audited**. It was written carefully, it uses
