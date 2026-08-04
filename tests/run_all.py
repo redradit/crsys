@@ -28,6 +28,7 @@ MODULES = [
     "test_kdf",
     "test_container",
     "test_tamper",
+    "test_defensive",
     "test_signing",
     "test_streaming",
     "test_vectors",

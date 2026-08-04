@@ -172,6 +172,12 @@ def _decapsulate(header: Header, keypair: KeyPair):
             cek = aead_for(header.suite, kek).decrypt(nonce, stanza.wrapped, _WRAP_AAD)
         except InvalidTag:
             continue
+        # Belt and braces, and known to be unreachable: WRAPPED_LEN is
+        # KEY_LEN + TAG_LEN and Recipient refuses any other length, so 48 bytes
+        # of ciphertext always decrypt to exactly 32. Kept because it costs
+        # nothing and would catch a future change to those constants; do not
+        # spend an afternoon trying to write a test that reaches it. The
+        # invariant is pinned in test_defensive.py instead.
         if len(cek) != KEY_LEN:
             continue
         return cek, index
@@ -364,6 +370,10 @@ def decrypt_stream(
         if final:
             trailer = plain
             break
+        # Also unreachable today, for the same kind of reason: max_ct above is
+        # chunk_size + TAG_LEN, _read_chunk refuses anything longer, and both
+        # AEADs are length-preserving, so plain can never exceed chunk_size. The
+        # test asserts which layer actually stops an oversized chunk.
         if len(plain) > header.chunk_size:
             raise FormatError("chunk larger than chunk_size")
         digest.update(plain)

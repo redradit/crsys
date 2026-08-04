@@ -228,7 +228,7 @@ to 1.0; they are separate namespaces on purpose.
 python tests/run_all.py
 ```
 
-254 tests, about 25 seconds; 93% coverage of the library and 90% overall. Beyond
+289 tests, about 22 seconds; 95% coverage of the library and 91% overall. Beyond
 the happy paths they cover:
 
 - **every single bit** of a container flipped (3 bits per byte, at every
@@ -260,6 +260,14 @@ the happy paths they cover:
   an identity name from escaping the keyring folder and a mistyped passphrase
   from locking someone out of their own key, and stubbing the dialogs had left
   all of it unexecuted;
+- **every defensive rejection in the library, driven one at a time.** The
+  attacks above only reach the checks a malformed *file* can reach; about thirty
+  `raise` statements had never executed in any test, and an untested `raise` is
+  worth as much as a comment — nobody has seen it fire, so nobody knows whether
+  its condition is right, whether it raises the type the error contract
+  promises, or whether it can fire at all. Both of this project's defensive
+  defects (6 and 8) were exactly that. Five modules are now at 100%. Two of the
+  new tests assert the *opposite*: see below;
 - **the operations that touch private keys on disk** — importing a key file,
   re-encrypting one under a new passphrase, exporting, deleting — including the
   cancel path at every prompt, because these are the ones whose failure mode is
@@ -372,6 +380,16 @@ came from a stranger who read the specification.
     the message are different properties, and only the first is present. Raised
     by a reviewer on Cryptography Stack Exchange, and the first finding here to
     come from a human rather than from testing or from reading a specification.
+
+Two defensive checks in `core.py` turned out to be **unreachable**, which is
+not a vulnerability but is false comfort: a reader sees two layers where there is
+one. A plaintext chunk can never exceed `chunk_size`, because `max_ct` is
+`chunk_size + TAG_LEN`, `_read_chunk` refuses anything longer, and both AEADs are
+length-preserving; and an unwrapped content key can never be the wrong length,
+because `WRAPPED_LEN` is fixed at `KEY_LEN + TAG_LEN`. Both are kept — they cost
+nothing and would catch a change to those constants — but they now say so, and
+the tests pin the layer that really stops each case rather than the one that
+appears to.
 
 **Findings 9, 10 and 11 landed after `v0.1.0` was tagged, and no release
 carried them.** That is its own defect — a fix nobody can download is not

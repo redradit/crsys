@@ -19,7 +19,7 @@ Python 3.9 or later. `gui` pulls in customtkinter, `argon2` enables Argon2id
 python tests/run_all.py
 ```
 
-254 tests, about 25 seconds. Useful variations:
+289 tests, about 22 seconds. Useful variations:
 
 ```bash
 python tests/run_all.py -v              # per-test names
@@ -27,8 +27,8 @@ python tests/run_all.py tamper signing  # only modules matching these
 python tests/run_all.py -x gui          # everything except the GUI
 ```
 
-Modules: `keys`, `kdf`, `container`, `tamper`, `signing`, `streaming`,
-`vectors`, `fuzz`, `cli`, `gui`.
+Modules: `keys`, `kdf`, `container`, `tamper`, `defensive`, `signing`,
+`streaming`, `vectors`, `fuzz`, `cli`, `gui`.
 
 Every run prints the slowest tests. That is not decoration — CI failures on one
 configuration once correlated with how long the job took rather than with any
@@ -105,7 +105,16 @@ way.
 
 ## Coverage
 
-CI enforces 90% on `crsys/` and will fail below it. The GUI is measured but not
+CI enforces 90% on `crsys/` and will fail below it; it currently sits at 95%.
+
+A caveat about that number: coverage is measured on Linux only, and the two
+platforms have complementary blind spots. The POSIX `os.chmod` branch of
+`restrict_to_owner` cannot run on Windows, and the `icacls` branch beside it
+cannot run on Linux, so **neither platform's figure is the whole truth**. If you
+touch that function, run the suite on both.
+
+`crsys/__main__.py` reports 0% and is nonetheless tested — `python -m crsys` runs
+in a subprocess, which the parent's coverage does not follow. The GUI is measured but not
 gated: its modal dialogs are replaced by automatic answers in tests by design,
 and folding them into one number would produce a figure that means nothing.
 
