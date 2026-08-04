@@ -24,6 +24,10 @@ dependencies = ["cryptography>=42.0"]
 [project.optional-dependencies]
 gui = ["customtkinter>=5.2"]
 argon2 = ["argon2-cffi>=23.1"]
+# Pinned exactly. A linter that floats can turn a green build red with no code
+# change, and this project has already spent three CI runs on a signal it could
+# not trust. Bumping these is a commit, with the new findings in the diff.
+dev = ["ruff==0.16.1", "mypy==2.3.0"]
 
 [project.scripts]
 crsys = "crsys.cli:main"
@@ -33,3 +37,130 @@ crsys-gui = "crsys_gui.app:main"
 
 [tool.setuptools]
 packages = ["crsys", "crsys_gui"]
+
+# ----------------------------------------------------------------------- ruff
+#
+# Curated, not maximal. Ruff ships about a thousand rules; switching on all of
+# them here produced roughly two thousand findings, of which the overwhelming
+# majority were this project being told to write a different dialect of Python.
+# A linter nobody can defend line by line gets switched off the first time it is
+# inconvenient, so every exclusion below has a reason next to it.
+
+[tool.ruff]
+target-version = "py39"
+# Measured, not copied from a template: 0.4% of lines exceed 88 columns and none
+# exceed 100, so 88 is the convention this code already follows. A larger limit
+# would enforce nothing.
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "F",      # pyflakes — the real-defect core. It found two dead imports.
+    "E", "W", # pycodestyle
+    "B",      # bugbear — mutable defaults, unused loop vars, except-order bugs
+    "S",      # bandit — this is a cryptography project; the security rules stay
+    "C4",     # comprehensions
+    "SIM",    # simplification, minus SIM105 below
+    "RET",    # inconsistent returns
+    "ARG",    # unused arguments
+    "PIE", "PERF", "FURB", "LOG", "ISC", "DTZ", "Q",
+    "RUF",
+    "N",      # naming
+    "BLE",    # blind except
+    "SLF",    # reaching into another object's privates
+    "T20",    # stray print
+    "PLE", "PLW", "PLC",  # pylint errors and warnings, not its refactor opinions
+    "TRY004", "TRY201", "TRY301",
+]
+ignore = [
+    # Families deliberately not enabled, and why:
+    #
+    # UP  — wants f-strings (172 sites) against an explicit project preference
+    #       for %-formatting, plus PEP 585/604 rewrites that buy nothing while
+    #       3.9 is the floor.
+    # D   — 400+ missing docstrings. This codebase documents *why*, in comments
+    #       at the point of the decision. D counts whether a docstring exists,
+    #       not whether anything was explained; 400 restatements of method names
+    #       would bury the comments that carry the reasoning.
+    # PTH — os.path is used throughout by choice. 200+ mechanical rewrites.
+    # PT  — pushes pytest idioms; the suite is unittest on purpose.
+    # EM, TRY003 — want exception messages hoisted into variables or new
+    #       exception classes. `raise FormatError("...%s" % x)` at the point of
+    #       failure is more readable, and there are 100+ of them.
+    # FBT — would make every boolean keyword-only. `armored=True` is public API.
+    # COM — trailing-comma style, and the formatter is deliberately not used
+    #       here (it would reflow 28 of 36 files, +1703/-769 lines, destroying
+    #       hand-alignment and comment layout).
+    # PLR — refactor opinions: argument counts, magic values. The crypto
+    #       functions genuinely take many parameters.
+    # I   — import sorting. Only three findings, but satisfying them means
+    #       adopting isort's vertical-hanging-indent for any import that does
+    #       not fit on one line: eight lines and a magic trailing comma where
+    #       this file has two hand-wrapped ones. That is the same trade the
+    #       formatter loses on, in miniature.
+    "SIM105",  # contextlib.suppress instead of try/except/pass. Behaviour-
+               # identical; the seven sites are documented Tk-teardown paths
+               # where the comment explains more than the idiom would.
+    "RUF022",  # __all__ sorting: ruff wants isort grouping (DEFAULT_DIR before
+    "RUF023",  # CrsysApp), the four lists here are plain alphabetical. The rule
+               # has no "plain alphabetical" mode, so it cannot be satisfied
+               # without abandoning the repo's own convention.
+    "N818",    # UnsupportedVersion, NoMatchingRecipient. They read as English
+               # at the raise site; the base class already says Error.
+    "TRY300",  # "move the return into an else". Four sites, pure preference.
+    "RET501",  # explicit `return None`. This codebase prefers saying it.
+    "PLC0415", # imports inside functions: deliberate, to keep the CLI usable
+               # without customtkinter installed and to defer Tk in tests.
+    "RUF015",  # list(SUITE_LABELS)[0] sits directly under values=list(...);
+               # next(iter(...)) would break that symmetry for no gain.
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The CLI's job is writing to stdout and stderr.
+"crsys/cli.py" = ["T20"]
+# Tk teardown and CustomTkinter private-attribute reaches: every one of these is
+# a documented best-effort path where the alternative is a crash on shutdown or
+# a window that will not open. The rules stay live for crsys/, which is where a
+# swallowed exception would actually matter.
+# SLF001: the GUI reaches into CustomTkinter's private attributes (there is no
+# public handle on a CTkTabview's selector) and into its own widgets' _label.
+# 255 sites, none of them in crsys/ — which is why the rule stays selected: it
+# now guards the library against growing a dependency on another module's
+# internals, where today it has none.
+"crsys_gui/*" = ["S110", "BLE001", "SLF001"]
+"tests/*" = [
+    "S",       # test fixtures use b"pw" and shell out to icacls on purpose
+    "ARG",     # dialog stubs are `lambda *a, **k: value`; that is the point
+    "BLE001",  # tests assert on "anything at all was raised"
+    "E731",    # a lambda is the clearest stub
+    "N802",    # setUpModule / tearDownModule are unittest's names, not mine
+    "SLF001",  # driving the GUI from code means touching widget internals
+    "T20",     # the runner prints its own report
+    "PLW2901",
+    "PERF203", # the fuzzer must catch per-parser inside its loop; that *is* the
+               # test. Optimising it away would delete the coverage.
+    "RUF012",  # class-level constant tables (small-order point encodings, wire
+               # vectors). Read-only fixtures, and annotating each one ClassVar
+               # would add noise to data that is obviously data.
+]
+
+# ---------------------------------------------------------------------- mypy
+#
+# Not --strict. Strict mode reports 47 findings on crsys/ alone, almost all
+# "function is missing a type annotation" on internal helpers whose arguments
+# are Tk widgets and cryptography objects. Annotating those would add noise
+# without catching anything; the settings below are the ones that catch real
+# mistakes. Six of the nine findings on the first run were a genuine overclaim:
+# BinaryIO promised seek/tell/fileno where the code only ever reads and writes.
+
+[tool.mypy]
+# No python_version: mypy 2.3 refuses anything below 3.10, so it cannot be
+# pointed at this project's 3.9 floor. That floor is enforced where it actually
+# matters anyway — CI runs the whole suite on 3.9 across three operating
+# systems, and ruff's target-version keeps the lint rules honest about it.
+files = ["crsys", "crsys_gui"]
+ignore_missing_imports = true   # customtkinter ships no stubs
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_equality = true

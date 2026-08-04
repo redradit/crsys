@@ -32,14 +32,14 @@ import io
 import os
 import secrets
 from dataclasses import dataclass
-from typing import BinaryIO, Iterable, List, Optional, Sequence
+from typing import Iterable, List, Optional, Sequence
 
 from cryptography.exceptions import InvalidSignature, InvalidTag
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from ._util import ChainedStream, ct_eq, read_exact
+from ._util import ChainedStream, Readable, Writable, ct_eq, read_exact
 from .armor import MESSAGE_BEGIN, ArmorWriter, armor, dearmor
 from .container import (
     ANONYMOUS_FPR,
@@ -113,7 +113,8 @@ class DecryptResult:
 
 
 def _hkdf(ikm: bytes, length: int, info: bytes) -> bytes:
-    return HKDF(algorithm=hashes.SHA256(), length=length, salt=None, info=info).derive(ikm)
+    return HKDF(algorithm=hashes.SHA256(), length=length, salt=None,
+                info=info).derive(ikm)
 
 
 def _kem_derive(shared: bytes, suite: int, eph_pub: bytes, recipient: PublicKey):
@@ -131,7 +132,8 @@ def _commit(cek: bytes) -> bytes:
     return _hkdf(cek, 32, _COMMIT_INFO)
 
 
-def _encapsulate(cek: bytes, recipient: PublicKey, suite: int, anonymous: bool) -> Recipient:
+def _encapsulate(cek: bytes, recipient: PublicKey, suite: int,
+                 anonymous: bool) -> Recipient:
     eph_priv = X25519PrivateKey.generate()
     eph_pub = eph_priv.public_key().public_bytes_raw()
     shared = eph_priv.exchange(recipient.x25519_object())
@@ -158,7 +160,12 @@ def _decapsulate(header: Header, keypair: KeyPair):
         stanza = header.recipients[index]
         try:
             shared = keypair.exchange(stanza.eph_pub)
-        except Exception:
+        # Broad and silent on purpose: a stanza this key cannot open is the
+        # normal case in a multi-recipient container, not an error. Nothing is
+        # lost by moving on -- if every stanza fails, the loop falls through to
+        # NoMatchingRecipient below, so no failure can be swallowed into a
+        # wrong answer.
+        except Exception:  # noqa: BLE001, S112
             continue
         kek, nonce = _kem_derive(shared, header.suite, stanza.eph_pub, my_pub)
         try:
@@ -178,7 +185,7 @@ def _decapsulate(header: Header, keypair: KeyPair):
 
 
 def _write_chunk(
-    fout: BinaryIO, aead, counter: int, final: bool, data: bytes, aad: bytes
+    fout: Writable, aead, counter: int, final: bool, data: bytes, aad: bytes
 ) -> int:
     ct = aead.encrypt(chunk_nonce(counter, final), data, aad)
     fout.write(len(ct).to_bytes(LENGTH_PREFIX, "big"))
@@ -186,7 +193,7 @@ def _write_chunk(
     return LENGTH_PREFIX + len(ct)
 
 
-def _read_chunk(stream: BinaryIO, max_ct: int) -> Optional[bytes]:
+def _read_chunk(stream: Readable, max_ct: int) -> Optional[bytes]:
     """Read one chunk. ``None`` at a clean end of file, exception if truncated."""
     prefix = read_exact(stream, LENGTH_PREFIX)
     if not prefix:
@@ -210,7 +217,7 @@ class _ProgressReader:
     identical with or without a progress bar.
     """
 
-    def __init__(self, fobj: BinaryIO, total: int, callback) -> None:
+    def __init__(self, fobj: Readable, total: int, callback) -> None:
         self._fobj = fobj
         self._total = total
         self._callback = callback
@@ -223,7 +230,7 @@ class _ProgressReader:
         return data
 
 
-def _open_container(fin: BinaryIO) -> BinaryIO:
+def _open_container(fin: Readable) -> Readable:
     """Detect a binary container or an armored block automatically.
 
     The armored block is searched for anywhere in the text, not just at the
@@ -251,8 +258,8 @@ def _open_container(fin: BinaryIO) -> BinaryIO:
 
 
 def encrypt_stream(
-    fin: BinaryIO,
-    fout: BinaryIO,
+    fin: Readable,
+    fout: Writable,
     recipients: Sequence[PublicKey],
     signer: Optional[KeyPair] = None,
     suite: int = SUITE_CHACHA20POLY1305,
@@ -313,8 +320,8 @@ def encrypt_stream(
 
 
 def decrypt_stream(
-    fin: BinaryIO,
-    fout: BinaryIO,
+    fin: Readable,
+    fout: Writable,
     keypair: KeyPair,
     expected_signer: Optional[PublicKey] = None,
 ) -> DecryptResult:
@@ -331,7 +338,8 @@ def decrypt_stream(
 
     cek, index = _decapsulate(header, keypair)
     if not ct_eq(_commit(cek), header.cek_commit):
-        raise DecryptionError("content key commitment mismatch: container was tampered with")
+        raise DecryptionError(
+            "content key commitment mismatch: container was tampered with")
 
     aead = aead_for(header.suite, cek)
     max_ct = header.chunk_size + TAG_LEN
@@ -402,7 +410,8 @@ def _check_trailer(
             signature, _SIGN_DOMAIN + signer.to_bytes() + hdr + plaintext_hash
         )
     except InvalidSignature:
-        raise SignatureError("invalid signature: content or sender was altered") from None
+        raise SignatureError(
+            "invalid signature: content or sender was altered") from None
     if expected_signer is not None and not ct_eq(
         signer.to_bytes(), expected_signer.to_bytes()
     ):
@@ -486,7 +495,8 @@ def encrypt_file(
             if armored:
                 with ArmorWriter(raw) as target:
                     result = encrypt_stream(
-                        fin, target, recipients, signer, suite, chunk_size, hide_recipients
+                        fin, target, recipients, signer, suite, chunk_size,
+                        hide_recipients
                     )
             else:
                 result = encrypt_stream(
@@ -527,7 +537,7 @@ def decrypt_file(
         raise
 
 
-def inspect_container(fin: BinaryIO) -> dict:
+def inspect_container(fin: Readable) -> dict:
     """Read the public metadata without holding (or needing) any key."""
     stream = _open_container(fin)
     header, _ = Header.read_from(stream)
@@ -553,7 +563,7 @@ def sign_detached(keypair: KeyPair, data: bytes) -> str:
     return sign_detached_stream(keypair, io.BytesIO(data))
 
 
-def sign_detached_stream(keypair: KeyPair, fin: BinaryIO) -> str:
+def sign_detached_stream(keypair: KeyPair, fin: Readable) -> str:
     digest = hashlib.sha256()
     while True:
         block = fin.read(1 << 20)
@@ -574,7 +584,7 @@ def verify_detached(
 
 
 def verify_detached_stream(
-    fin: BinaryIO, signature_text: str, expected_signer: Optional[PublicKey] = None
+    fin: Readable, signature_text: str, expected_signer: Optional[PublicKey] = None
 ) -> PublicKey:
     """Verify a detached signature and return the signer's public key."""
     from .armor import SIGNATURE_BEGIN, SIGNATURE_END

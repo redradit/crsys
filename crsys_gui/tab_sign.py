@@ -11,7 +11,8 @@ from crsys import sign_detached_stream, verify_detached_stream
 
 from . import theme
 from .keyring import Identity
-from .widgets import ALL_FILES, Banner, FilePicker, IdentityChooser, Panel, TextPanel, hint, section
+from .widgets import (ALL_FILES, Banner, FilePicker, IdentityChooser, Panel,
+                      TextPanel, hint, section)
 
 SIG_FILES = [("CRSYS signatures", "*.sig"), ("All files", "*.*")]
 
@@ -146,7 +147,7 @@ class SignPanel(Panel):
         def done(signature):
             self._sign_text.set(signature)
             self._sign_banner.show(
-                "Signed with \"%s\".%s" % (name, "\nSaved to %s" % destination
+                'Signed with "%s".%s' % (name, "\nSaved to %s" % destination
                                            if destination else ""), "ok")
             self.app.status.message("Signature created.", "ok")
 
@@ -193,7 +194,7 @@ class SignPanel(Panel):
             identity = self.app.keyring.find_by_public_key(signer)
             if identity is not None:
                 self._verify_banner.show(
-                    "Signature VALID from \"%s\"  (%s)" % (identity.name, fingerprint),
+                    'Signature VALID from "%s"  (%s)' % (identity.name, fingerprint),
                     "ok")
             else:
                 self._verify_banner.show(

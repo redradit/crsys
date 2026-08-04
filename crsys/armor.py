@@ -39,7 +39,8 @@ class ArmorWriter:
 
     _GROUP = 57
 
-    def __init__(self, fout, begin: str = MESSAGE_BEGIN, end: str = MESSAGE_END) -> None:
+    def __init__(self, fout, begin: str = MESSAGE_BEGIN,
+                 end: str = MESSAGE_END) -> None:
         self._out = fout
         self._end = end
         self._buf = bytearray()

@@ -105,7 +105,8 @@ class TestRoundtrip(unittest.TestCase):
             decrypt_bytes(sealed, self.carol)
 
     def test_hidden_recipients(self):
-        sealed = encrypt_bytes(b"anonymous", [self.bob.public_key, self.carol.public_key],
+        sealed = encrypt_bytes(b"anonymous",
+                               [self.bob.public_key, self.carol.public_key],
                                hide_recipients=True)
         info = inspect_container(io.BytesIO(sealed))
         self.assertEqual(info["recipients"], ["anonymous", "anonymous"])
@@ -131,7 +132,8 @@ class TestArmor(unittest.TestCase):
 
     def test_armored_roundtrip(self):
         data = secrets.token_bytes(5000)
-        text = encrypt_bytes(data, [self.bob.public_key], armored=True, chunk_size=CHUNK)
+        text = encrypt_bytes(data, [self.bob.public_key], armored=True,
+                             chunk_size=CHUNK)
         self.assertIsInstance(text, str)
         self.assertTrue(text.startswith(MESSAGE_BEGIN))
         self.assertTrue(all(len(ln) <= 76 for ln in text.splitlines()))
@@ -209,7 +211,8 @@ class TestFileApi(unittest.TestCase):
             src, enc, dec = (os.path.join(tmp, n) for n in ("a", "b", "c"))
             with open(src, "wb") as fh:
                 fh.write(data)
-            encrypt_file(src, enc, [self.bob.public_key], armored=True, chunk_size=CHUNK)
+            encrypt_file(src, enc, [self.bob.public_key], armored=True,
+                         chunk_size=CHUNK)
             with open(enc, "r", encoding="ascii") as fh:
                 text = fh.read()
             self.assertTrue(text.startswith(MESSAGE_BEGIN))

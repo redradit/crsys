@@ -27,9 +27,9 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, field
-from typing import BinaryIO, List, Tuple
+from typing import List, Tuple
 
-from ._util import read_exact, read_or_fail
+from ._util import Readable, read_exact, read_or_fail
 from .errors import FormatError, UnsupportedVersion
 from .suite import SUITE_AES256GCM, SUITE_CHACHA20POLY1305
 
@@ -124,7 +124,7 @@ class Header:
             raise FormatError("invalid recipient count: %d" % len(self.recipients))
 
     @classmethod
-    def read_from(cls, fobj: BinaryIO) -> Tuple["Header", bytes]:
+    def read_from(cls, fobj: Readable) -> Tuple["Header", bytes]:
         """Read the header and also return its raw bytes (needed as AAD)."""
         fixed = read_exact(fobj, FIXED_HEADER_LEN)
         if len(fixed) < FIXED_HEADER_LEN:

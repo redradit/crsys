@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import tkinter
 from tkinter import filedialog
 from typing import List, Optional
@@ -116,7 +115,8 @@ class IdentitiesPanel(Panel):
             text="Select an identity on the left.\n\n"
                  "An identity is a key pair:\n"
                  "  ·  the public key is meant to be handed out freely\n"
-                 "  ·  the private key stays on your disk, protected by a passphrase\n\n"
+                 "  ·  the private key stays on your disk,"
+                 " protected by a passphrase\n\n"
                  "Anyone who wants to write to you only needs your public key.",
             font=ctk.CTkFont(size=theme.BODY_SIZE))
         self._empty.pack(anchor="w")
@@ -287,7 +287,7 @@ class IdentitiesPanel(Panel):
 
         def done(identity):
             self._selected = identity.name
-            self.app.status.message("Identity \"%s\" created." % identity.name, "ok")
+            self.app.status.message('Identity "%s" created.' % identity.name, "ok")
             self.app.refresh_identities()
 
         self.app.run(job, done, "Could not create the identity")
@@ -333,7 +333,7 @@ class IdentitiesPanel(Panel):
             dialogs.show_error(self.app, "Import failed", str(exc))
             return
         self._selected = data["name"]
-        self.app.status.message("Public key \"%s\" imported." % data["name"], "ok")
+        self.app.status.message('Public key "%s" imported.' % data["name"], "ok")
         self.app.refresh_identities()
 
     def _import_private(self) -> None:
@@ -369,7 +369,7 @@ class IdentitiesPanel(Panel):
 
         def done(identity):
             self._selected = identity.name
-            self.app.status.message("Private key \"%s\" imported." % name, "ok")
+            self.app.status.message('Private key "%s" imported.' % name, "ok")
             self.app.refresh_identities()
 
         self.app.run(job, done, "Import failed")
@@ -380,14 +380,14 @@ class IdentitiesPanel(Panel):
             return
         if identity.unlocked:
             self.app.keyring.lock(identity.name)
-            self.app.status.message("Key \"%s\" locked." % identity.name)
+            self.app.status.message('Key "%s" locked.' % identity.name)
             self.app.refresh_identities()
             return
 
         passphrase = None
         if identity.encrypted:
             value = dialogs.ask_passphrase(
-                self.app, "Unlock \"%s\"" % identity.name,
+                self.app, 'Unlock "%s"' % identity.name,
                 "Enter the passphrase for this private key.")
             if value is None:
                 return
@@ -399,7 +399,7 @@ class IdentitiesPanel(Panel):
             return self.app.keyring.unlock(identity.name, passphrase)
 
         def done(_keypair):
-            self.app.status.message("Key \"%s\" unlocked." % identity.name, "ok")
+            self.app.status.message('Key "%s" unlocked.' % identity.name, "ok")
             self.app.refresh_identities()
 
         self.app.run(job, done, "Unlock failed")
@@ -424,7 +424,7 @@ class IdentitiesPanel(Panel):
 
         value = dialogs.ask_passphrase(
             self.app, "New passphrase",
-            "Choose the new passphrase for \"%s\"." % identity.name, confirm=True)
+            'Choose the new passphrase for "%s".' % identity.name, confirm=True)
         if value is None:
             return
         new = value.encode("utf-8")
@@ -441,7 +441,7 @@ class IdentitiesPanel(Panel):
 
         def done(_result):
             self.app.status.message(
-                "Passphrase for \"%s\" updated." % identity.name, "ok")
+                'Passphrase for "%s" updated.' % identity.name, "ok")
             self.app.refresh_identities()
 
         self.app.run(job, done, "Could not change the passphrase")
@@ -476,11 +476,11 @@ class IdentitiesPanel(Panel):
         if identity is None:
             return
         if identity.has_private:
-            message = ("Delete \"%s\"?\n\nThis includes the PRIVATE KEY: without a "
+            message = ('Delete "%s"?\n\nThis includes the PRIVATE KEY: without a '
                        "backup, every message encrypted to this identity becomes "
                        "permanently unreadable." % identity.name)
         else:
-            message = "Delete the public key \"%s\"?" % identity.name
+            message = 'Delete the public key "%s"?' % identity.name
         if not dialogs.ask_yes_no(self.app, "Confirm deletion", message):
             return
         try:
@@ -489,5 +489,5 @@ class IdentitiesPanel(Panel):
             dialogs.show_error(self.app, "Deletion failed", str(exc))
             return
         self._selected = None
-        self.app.status.message("Identity \"%s\" deleted." % identity.name)
+        self.app.status.message('Identity "%s" deleted.' % identity.name)
         self.app.refresh_identities()

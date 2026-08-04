@@ -107,7 +107,8 @@ class DecryptPanel(Panel):
 
     def on_identities_changed(self, identities: List[Identity]) -> None:
         self._identities = identities
-        self._key.set_identities([i for i in identities if i.has_private and not i.error])
+        self._key.set_identities(
+            [i for i in identities if i.has_private and not i.error])
         self._expected.set_identities([i for i in identities if i.public_key])
 
     def _switch_mode(self, mode: str) -> None:
@@ -204,7 +205,7 @@ class DecryptPanel(Panel):
                 return
             if os.path.exists(destination) and not dialogs.ask_yes_no(
                     self.app, "Overwrite?",
-                    "\"%s\" already exists. Overwrite it?"
+                    '"%s" already exists. Overwrite it?'
                     % os.path.basename(destination)):
                 return
 
@@ -255,7 +256,7 @@ class DecryptPanel(Panel):
         identity = self.app.keyring.find_by_public_key(info.signer)
         if identity is not None:
             self._banner.show(
-                "Valid signature from \"%s\"  (%s)%s"
+                'Valid signature from "%s"  (%s)%s'
                 % (identity.name, fingerprint, saved), "ok")
         else:
             self._banner.show(

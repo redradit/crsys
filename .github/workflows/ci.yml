@@ -61,6 +61,48 @@ jobs:
         if: runner.os != 'Linux'
         run: python tests/run_all.py
 
+  lint:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # One interpreter, not the matrix. Ruff's findings do not vary by
+          # operating system, and running it fifteen times would buy nothing.
+          # Mypy's can vary by Python version — but mypy 2.x refuses to target
+          # 3.9 at all, so a single run is the honest scope. What actually holds
+          # the 3.9 floor is the test matrix, which runs the suite on 3.9 across
+          # three operating systems.
+          python-version: "3.12"
+
+      # The package itself, so mypy can follow imports into cryptography, and
+      # the pinned tools from the dev extra. Pinned deliberately: an unpinned
+      # linter can turn a green build red with no code change, and this project
+      # has already spent three CI runs on a signal it could not trust.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[gui,argon2,dev]"
+
+      # Blocking, not advisory. The tree is at zero findings as of this commit,
+      # so there is no backlog to grandfather in — an advisory linter starting
+      # from green can only decay. `ruff check .` rather than named paths, so a
+      # directory added later is covered without anyone remembering to add it.
+      - name: Lint
+        run: python -m ruff check .
+
+      # Paths come from [tool.mypy] files, so this and a local run cannot drift.
+      - name: Types
+        run: python -m mypy
+
+      # Deliberately no `ruff format --check`. Measured before deciding: the
+      # formatter would rewrite 28 of 36 files, +1703/-769 lines, reflowing
+      # hand-aligned signatures and the comment layout that carries most of the
+      # reasoning in this codebase. E501 at 88 columns already enforces the
+      # limit the code actually observes.
+
   fuzz:
     name: Fuzz campaign
     runs-on: ubuntu-latest

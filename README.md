@@ -228,7 +228,7 @@ to 1.0; they are separate namespaces on purpose.
 python tests/run_all.py
 ```
 
-243 tests, about 25 seconds; 93% coverage of the library and 90% overall. Beyond
+254 tests, about 25 seconds; 93% coverage of the library and 90% overall. Beyond
 the happy paths they cover:
 
 - **every single bit** of a container flipped (3 bits per byte, at every
@@ -265,6 +265,47 @@ the happy paths they cover:
   cancel path at every prompt, because these are the ones whose failure mode is
   unrecoverable.
 
+### Static analysis
+
+```bash
+python -m ruff check .
+python -m mypy
+```
+
+Both are clean, and both are blocking in CI. The configuration lives in
+`pyproject.toml` and is curated rather than maximal: the wide-open selection
+reported roughly two thousand findings, almost all of them this project being
+told to write a different dialect of Python. Every rule family that is *not*
+enabled has its reason written next to it, because a config nobody can defend
+gets switched off the first time it is inconvenient.
+
+What the first run actually found, out of 38 candidates in the library and GUI:
+
+- two dead imports;
+- an annotation that overclaimed. Six errors came from `BinaryIO`, which
+  promises `seek`, `tell`, `fileno` and a dozen more, on functions that only
+  ever call `read` and `write` — and which were being handed wrappers
+  implementing none of the rest. It is replaced by two one-method protocols,
+  `Readable` and `Writable`, which also say the thing that matters: this code
+  reads forwards and never seeks, which is what lets it work on a pipe;
+- an implicit invariant in a dialog, where a guard tested a boolean flag that
+  was *supposed* to agree with whether a widget existed. It now tests the
+  widget;
+- a missing assertion in a CLI test, which unpacked an exit code and never
+  checked it — so the test would have passed on a failing command that printed
+  the right word.
+
+Everything else was deliberate and is suppressed narrowly, at the line, with
+the reason. Two hypotheses did not survive reading the code and are recorded
+here because they were the ones worth worrying about: the `subprocess` calls
+that harden a private key's ACL *do* check their exit status on every path that
+matters, and the one mutable class attribute is a read-only colour table shared
+on purpose.
+
+The formatter is deliberately not used. Measured before deciding: it would
+rewrite 28 of 36 files, +1703/-769 lines, reflowing hand-aligned signatures and
+the comment layout that carries most of the reasoning here.
+
 ### Fuzzing
 
 ```bash
@@ -284,9 +325,10 @@ code that assumed otherwise.
 
 ### Defects found so far
 
-Eleven. The first eight came from testing rather than from reading the code; the
-last three came from comparing the construction against RFC 9180 and the
-published analysis of Ed25519, which no amount of testing would have surfaced.
+Twelve. The first eight came from testing rather than from reading the code;
+three came from comparing the construction against RFC 9180 and the published
+analysis of Ed25519, which no amount of testing would have surfaced; the last
+came from a stranger who read the specification.
 
 1. the signature did not cover the X25519 half of the sender's identity, which
    allowed a valid signature to be re-attributed to a different fingerprint;

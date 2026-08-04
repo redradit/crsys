@@ -22,7 +22,10 @@ try:  # pragma: no cover - depends on the environment
     from argon2.low_level import Type as _Argon2Type, hash_secret_raw as _argon2_raw
 
     ARGON2_AVAILABLE = True
-except Exception:  # pragma: no cover
+# Broad on purpose: argon2-cffi is optional, and a half-installed one raises
+# more than ImportError -- the C binding can fail with OSError at load time.
+# Any failure here means the same thing: fall back to scrypt.
+except Exception:  # noqa: BLE001  # pragma: no cover
     ARGON2_AVAILABLE = False
 
 SALT_LEN = 16
@@ -89,7 +92,7 @@ def _parameter_errors(name: str):
         yield
     except FormatError:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- see the docstring: that is the point
         raise FormatError("%s rejected these parameters: %s" % (name, exc)) from None
 
 

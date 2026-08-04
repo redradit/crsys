@@ -219,7 +219,10 @@ class TestFilePermissions(unittest.TestCase):
         with CheapKdf(), tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "id.key")
             KeyPair.generate().save(path, b"pw")
-            listing = subprocess.run(["icacls", path], capture_output=True,
+            # No check=: this reads icacls output to assert on it. A
+            # non-zero exit would show up as an empty listing and fail the
+            # assertion below, which is the outcome we want either way.
+            listing = subprocess.run(["icacls", path], capture_output=True,  # noqa: PLW1510
                                      text=True).stdout
             # "(I)" marks an inherited entry; after /inheritance:r none remain.
             self.assertNotIn("(I)", listing,
@@ -291,7 +294,8 @@ class TestPrivateKeyFile(unittest.TestCase):
             key.public_key.save(pub)
 
             self.assertTrue(KeyPair.is_encrypted(priv))
-            self.assertEqual(KeyPair.load(priv, b"pw").secret_bytes(), key.secret_bytes())
+            self.assertEqual(KeyPair.load(priv, b"pw").secret_bytes(),
+                             key.secret_bytes())
             self.assertEqual(PublicKey.load(pub), key.public_key)
 
             key.save(priv, None)
@@ -311,8 +315,10 @@ class TestPrivateKeyFile(unittest.TestCase):
             kdf_mod.derive(b"pw", kdf_mod.KdfParams("scrypt", {"n": 3, "r": 8, "p": 1},
                                                     b"0" * 16))
         with self.assertRaises(FormatError):
-            kdf_mod.derive(b"pw", kdf_mod.KdfParams("scrypt", {"n": 1 << 30, "r": 8, "p": 1},
-                                                   b"0" * 16))
+            kdf_mod.derive(
+                b"pw",
+                kdf_mod.KdfParams("scrypt", {"n": 1 << 30, "r": 8, "p": 1},
+                                  b"0" * 16))
         with self.assertRaises(FormatError):
             kdf_mod.KdfParams.parse("md5", b"0" * 16)
 

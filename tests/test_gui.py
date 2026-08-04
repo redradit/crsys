@@ -139,7 +139,7 @@ def setUpModule():
     except Exception as exc:  # pragma: no cover
         _ENV["kdf"].__exit__(None, None, None)
         _ENV["tmp"].cleanup()
-        raise unittest.SkipTest("no usable display: %s" % exc)
+        raise unittest.SkipTest("no usable display: %s" % exc) from exc
 
     app.withdraw()
     app.keyring.create("alice", "Alice", b"pw")
@@ -305,7 +305,8 @@ class TestIdentitiesPanel(GuiTestCase):
             from crsys_gui import tab_identities as ti
 
             real = ti.filedialog.askopenfilename
-            ti.filedialog.askopenfilename = lambda *a, **k: calls.append("private") or ""
+            ti.filedialog.askopenfilename = (
+                lambda *a, **k: calls.append("private") or "")
             try:
                 menu.invoke(1)
             finally:

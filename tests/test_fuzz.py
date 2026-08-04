@@ -278,7 +278,8 @@ def _check_container(sample, mutated, iteration, mutator):
     except CrsysError:
         pass
     except Exception as exc:
-        raise Failure("%s: unexpected %s: %s" % (where, type(exc).__name__, exc))
+        raise Failure(
+            "%s: unexpected %s: %s" % (where, type(exc).__name__, exc)) from exc
     else:
         if mutated == sample.data:
             if out != sample.plaintext:
@@ -297,7 +298,8 @@ def _check_container(sample, mutated, iteration, mutator):
     except CrsysError:
         pass
     except Exception as exc:
-        raise Failure("%s: inspect raised %s: %s" % (where, type(exc).__name__, exc))
+        raise Failure(
+            "%s: inspect raised %s: %s" % (where, type(exc).__name__, exc)) from exc
 
 
 def _check_text(name, mutated, iteration, mutator):
@@ -305,7 +307,8 @@ def _check_text(name, mutated, iteration, mutator):
     try:
         text = mutated.decode("utf-8", errors="replace")
     except Exception as exc:  # pragma: no cover - decode with replace cannot fail
-        raise Failure("%s: decode raised %s" % (where, type(exc).__name__))
+        raise Failure(
+            "%s: decode raised %s" % (where, type(exc).__name__)) from exc
 
     for parse in (PublicKey.parse, lambda t: KeyPair.from_text(t, b"pw"),
                   lambda t: KeyPair.from_text(t, None)):
@@ -314,7 +317,8 @@ def _check_text(name, mutated, iteration, mutator):
         except CrsysError:
             pass
         except Exception as exc:
-            raise Failure("%s: %s: %s" % (where, type(exc).__name__, exc))
+            raise Failure(
+                "%s: %s: %s" % (where, type(exc).__name__, exc)) from exc
 
 
 def _reader(data):

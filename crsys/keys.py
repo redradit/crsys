@@ -11,7 +11,6 @@ primitives is a classic source of cross-protocol attacks.
 
 from __future__ import annotations
 
-import getpass
 import hashlib
 import os
 import secrets
@@ -168,7 +167,8 @@ class PublicKey:
         return cls.from_bytes(body)
 
     def to_text(self) -> str:
-        fields = [("version", str(_KEYFILE_VERSION)), ("fingerprint", self.fingerprint_hex)]
+        fields = [("version", str(_KEYFILE_VERSION)),
+                  ("fingerprint", self.fingerprint_hex)]
         if self.comment:
             fields.append(("comment", _sanitize_comment(self.comment)))
         lines = [PUBLIC_BEGIN]
@@ -336,7 +336,8 @@ class KeyPair:
             key = cls(body, comment)
         elif cipher == "chacha20poly1305":
             if not passphrase:
-                raise PassphraseError("the private key is encrypted: a passphrase is required")
+                raise PassphraseError(
+                    "the private key is encrypted: a passphrase is required")
             salt = kdf.salt_from_text(fields.get("salt", ""))
             nonce = b64d(fields.get("nonce", ""), "nonce")
             if len(nonce) != NONCE_LEN:
@@ -376,7 +377,8 @@ class KeyPair:
     @staticmethod
     def is_encrypted(path: str) -> bool:
         with open(path, "r", encoding="utf-8") as fh:
-            fields, _ = _parse_block(fh.read(), PRIVATE_BEGIN, PRIVATE_END, "private key")
+            fields, _ = _parse_block(fh.read(), PRIVATE_BEGIN, PRIVATE_END,
+                                     "private key")
         return fields.get("cipher", "none").strip().lower() != "none"
 
     def __repr__(self) -> str:
@@ -444,7 +446,15 @@ _WINDOWS_SID_CACHE: List[Optional[str]] = []
 
 
 def _run_hidden(argv, timeout=20):
-    return subprocess.run(
+    # Suppressed below: argv is always a fixed list built here, never
+    # shell-parsed and never containing anything a container or a peer
+    # supplied. check= is
+    # deliberately absent because both callers inspect returncode themselves --
+    # _current_user_sid() requires 0 and validates the SID shape, and
+    # restrict_to_owner() requires 0 before trusting the new ACL. The one call
+    # whose result is ignored is the rollback, where there is nothing better to
+    # do than return False.
+    return subprocess.run(  # noqa: S603, PLW1510
         argv, capture_output=True, text=True, timeout=timeout,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 

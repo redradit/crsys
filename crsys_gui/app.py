@@ -205,7 +205,10 @@ class CrsysApp(ctk.CTk):
                 message = str(exc)
             else:
                 message = "%s: %s" % (type(exc).__name__, exc)
-                print(tb, file=sys.stderr)
+                # The user gets a dialog; whoever is running this from a
+                # terminal gets the traceback. An unexpected exception
+                # type here means a bug, and a bug should leave evidence.
+                print(tb, file=sys.stderr)  # noqa: T201
             self.status.message(error_title, "error")
             if on_fail is not None:
                 on_fail(message)
@@ -222,13 +225,13 @@ class CrsysApp(ctk.CTk):
         identity = self.keyring.get(name)
         if identity is None or not identity.has_private:
             dialogs.show_error(self, "Key unavailable",
-                               "The keyring has no private key named \"%s\"." % name)
+                               'The keyring has no private key named "%s".' % name)
             return False, None
         if not identity.encrypted:
             return True, None
         value = dialogs.ask_passphrase(
-            self, "Unlock \"%s\"" % name,
-            "Enter the passphrase for private key \"%s\"." % name)
+            self, 'Unlock "%s"' % name,
+            'Enter the passphrase for private key "%s".' % name)
         if value is None:
             return False, None
         return True, value.encode("utf-8")
@@ -283,10 +286,15 @@ class CrsysApp(ctk.CTk):
         try:
             if sys.platform == "win32":
                 os.startfile(path)  # noqa: S606
+            # Suppressed on the next line: `path` is the keyring directory -- either the
+            # default or what the user passed on their own command line. Nothing
+            # from a container, a filename or a peer reaches it, there is no
+            # shell, and the bare program name is the only portable form (there
+            # is no canonical location for xdg-open).
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", path])
+                subprocess.Popen(["open", path])  # noqa: S603, S607
             else:
-                subprocess.Popen(["xdg-open", path])
+                subprocess.Popen(["xdg-open", path])  # noqa: S603, S607
         except Exception as exc:
             dialogs.show_error(self, "Cannot open the folder", str(exc))
 

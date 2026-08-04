@@ -195,7 +195,8 @@ class TestCli(unittest.TestCase):
     def test_recipient_in_compact_form(self):
         _, compact, _ = run("pubkey", "-k", self.bob + ".key", "--compact")
         enc, dec = self.p("doc.crsys"), self.p("doc.out")
-        code, _, err = run("encrypt", "-r", compact.strip(), "-i", self.plain, "-o", enc)
+        code, _, err = run("encrypt", "-r", compact.strip(),
+                           "-i", self.plain, "-o", enc)
         self.assertEqual(code, EXIT_OK, err)
         self.assertEqual(
             run("decrypt", "-k", self.bob + ".key", "-i", enc, "-o", dec)[0],
@@ -206,7 +207,8 @@ class TestCli(unittest.TestCase):
         enc, dec = self.p("doc.crsys"), self.p("doc.out")
         run("encrypt", "-r", self.bob + ".pub", "-i", self.plain, "-o", enc,
             "--suite", "aes256gcm")
-        code, out, _ = run("inspect", "-i", enc)
+        code, out, err = run("inspect", "-i", enc)
+        self.assertEqual(code, EXIT_OK, err)
         self.assertIn("aes256gcm", out)
         self.assertEqual(
             run("decrypt", "-k", self.bob + ".key", "-i", enc, "-o", dec)[0],
@@ -239,8 +241,8 @@ class TestCli(unittest.TestCase):
         with open(enc, "r+b") as fh:
             fh.seek(200)
             fh.write(b"\x00")
-        code, _, err = run("decrypt", "-k", self.bob + ".key", "-i", enc,
-                           "-o", self.p("x"))
+        code, _, _ = run("decrypt", "-k", self.bob + ".key", "-i", enc,
+                         "-o", self.p("x"))
         self.assertEqual(code, EXIT_CRYPTO)
         self.assertFalse(os.path.exists(self.p("x")))
 

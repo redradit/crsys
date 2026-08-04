@@ -24,7 +24,8 @@ from .errors import CrsysError, PassphraseError, SignatureError
 from .keys import KeyPair, PublicKey
 from .suite import SUITE_BY_NAME, suite_name
 
-ENV_PASSPHRASE = "CRSYS_PASSPHRASE"
+# Suppressed on the next line: the name of an environment variable, not a passphrase.
+ENV_PASSPHRASE = "CRSYS_PASSPHRASE"  # noqa: S105
 
 EXIT_OK = 0
 EXIT_USAGE = 1
@@ -93,8 +94,7 @@ def _refuse_overwrite(path: str, force: bool) -> None:
 def cmd_keygen(args) -> int:
     base = args.output
     for suffix in (".key", ".pub"):
-        if base.endswith(suffix):
-            base = base[: -len(suffix)]
+        base = base.removesuffix(suffix)
     priv_path, pub_path = base + ".key", base + ".pub"
     _refuse_overwrite(priv_path, args.force)
     _refuse_overwrite(pub_path, args.force)
@@ -165,7 +165,8 @@ def cmd_encrypt(args) -> int:
         wrapper = ArmorWriter(fout) if args.armor else fout
         try:
             result = encrypt_stream(
-                fin, wrapper, recipients, signer, suite, args.chunk_size, args.hide_recipients
+                fin, wrapper, recipients, signer, suite, args.chunk_size,
+                args.hide_recipients
             )
             if args.armor:
                 wrapper.close()
@@ -219,7 +220,8 @@ def cmd_decrypt(args) -> int:
 
     if not args.quiet:
         print(
-            "Decrypted %d bytes  [%s]" % (result.plaintext_bytes, suite_name(result.suite)),
+            "Decrypted %d bytes  [%s]"
+            % (result.plaintext_bytes, suite_name(result.suite)),
             file=sys.stderr,
         )
         if result.signer:
@@ -355,7 +357,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-s", "--sign", metavar="FILE", help="private key to sign with")
     p.add_argument("--self", dest="self_recipient", action="store_true",
                    help="add the sender as a recipient (to re-read what you sent)")
-    p.add_argument("--armor", action="store_true", help="ASCII output instead of binary")
+    p.add_argument("--armor", action="store_true",
+                   help="ASCII output instead of binary")
     p.add_argument("--hide-recipients", action="store_true",
                    help="zero out the fingerprints in the header")
     p.add_argument("--suite", default="chacha20poly1305",

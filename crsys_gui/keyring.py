@@ -145,7 +145,8 @@ class Keyring:
         a signature; use :meth:`find_by_public_key` for that.
         """
         for identity in self.scan():
-            if identity.public_key and identity.public_key.fingerprint_hex == fingerprint:
+            if (identity.public_key
+                    and identity.public_key.fingerprint_hex == fingerprint):
                 return identity
         return None
 

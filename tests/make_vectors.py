@@ -20,13 +20,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from crsys import (  # noqa: E402
+from crsys import (
     SUITE_AES256GCM,
     SUITE_CHACHA20POLY1305,
     KeyPair,
     encrypt_bytes,
 )
-from crsys.container import DEFAULT_CHUNK_SIZE  # noqa: E402
+from crsys.container import DEFAULT_CHUNK_SIZE
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vectors.json")
 
@@ -45,23 +45,23 @@ def main() -> int:
     }
 
     plans = [
-        ("unsigned-empty", "Empty plaintext, default suite. The final chunk is "
-                           "the only chunk.", ["bob"], None, SUITE_CHACHA20POLY1305,
+        ("unsigned-empty", ("Empty plaintext, default suite. The final chunk is "
+                            "the only chunk."), ["bob"], None, SUITE_CHACHA20POLY1305,
          DEFAULT_CHUNK_SIZE, b"", False),
         ("unsigned-short", "Single short chunk.", ["bob"], None,
          SUITE_CHACHA20POLY1305, DEFAULT_CHUNK_SIZE, b"hello world", False),
-        ("signed-short", "Signed by alice; the trailer carries her public key "
-                         "and signature.", ["bob"], "alice", SUITE_CHACHA20POLY1305,
+        ("signed-short", ("Signed by alice; the trailer carries her public key "
+                          "and signature."), ["bob"], "alice", SUITE_CHACHA20POLY1305,
          DEFAULT_CHUNK_SIZE, b"signed message", False),
-        ("unsigned-exact-chunk", "Plaintext exactly one chunk long, so the last "
-                                 "data chunk is full size.", ["bob"], None,
+        ("unsigned-exact-chunk", ("Plaintext exactly one chunk long, so the last "
+                                  "data chunk is full size."), ["bob"], None,
          SUITE_CHACHA20POLY1305, 1024, b"A" * 1024, False),
         ("signed-multi-chunk", "Four data chunks plus the signature trailer.",
          ["bob"], "alice", SUITE_CHACHA20POLY1305, 1024, b"B" * 3500, False),
         ("aes256gcm", "Suite 2 instead of the default.", ["bob"], "alice",
          SUITE_AES256GCM, 1024, b"aes payload" * 40, False),
-        ("multi-recipient", "Three envelopes over one payload; any of the three "
-                            "private keys opens it.", ["bob", "alice", "carol"],
+        ("multi-recipient", ("Three envelopes over one payload; any of the three "
+                             "private keys opens it."), ["bob", "alice", "carol"],
          "alice", SUITE_CHACHA20POLY1305, 1024, b"for all three", False),
         ("hidden-recipients", "Recipient fingerprints zeroed in the header.",
          ["bob", "carol"], None, SUITE_CHACHA20POLY1305, DEFAULT_CHUNK_SIZE,

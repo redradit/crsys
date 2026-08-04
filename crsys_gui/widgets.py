@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from tkinter import filedialog
-from typing import Callable, Iterable, List, Optional
+from typing import Callable, ClassVar, Dict, Iterable, List, Optional, Tuple
 
 import customtkinter as ctk
 
@@ -197,10 +197,20 @@ class RecipientPicker(ctk.CTkScrollableFrame):
                 box.deselect()
 
 
+# Every colour in theme.py is a (light mode, dark mode) pair, which is what
+# CustomTkinter accepts directly.
+_Color = Tuple[str, str]
+
+
 class Banner(ctk.CTkFrame):
     """Coloured outcome box: green verified, amber partial, red rejected."""
 
-    _STYLES = {
+    # ClassVar, and shared on purpose: four Banner instances exist and all four
+    # read the same never-mutated colour table. The annotation is what says so —
+    # and it was wrong on the first attempt, because a CustomTkinter colour is
+    # itself a (light, dark) pair, so each entry is a pair of pairs. mypy caught
+    # that; a comment claiming otherwise would not have.
+    _STYLES: ClassVar[Dict[str, Tuple[_Color, _Color]]] = {
         "ok": (theme.OK_BG, theme.OK_FG),
         "warn": (theme.WARN_BG, theme.WARN_FG),
         "error": (theme.ERROR_BG, theme.ERROR_FG),

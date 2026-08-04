@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from tkinter import messagebox
-from typing import Optional
+from typing import Any, Optional
 
 import customtkinter as ctk
 
@@ -15,11 +15,17 @@ from .keyring import valid_name
 
 
 class _Modal(ctk.CTkToplevel):
-    """Base class for modal windows; the outcome lands in ``self.result``."""
+    """Base class for modal windows; the outcome lands in ``self.result``.
+
+    ``result`` is deliberately untyped: each dialog puts a different shape in it
+    — a string for a passphrase, a dict for a new identity — and the caller knows
+    which dialog it opened. Annotating it here would either be a lie or a union
+    that every caller has to narrow for no benefit.
+    """
 
     def __init__(self, parent, title: str, width: int = 420, height: int = 220) -> None:
         super().__init__(parent)
-        self.result = None
+        self.result: Any = None
         self.title(title)
         self.resizable(False, False)
         self.transient(parent)
@@ -57,20 +63,20 @@ class PassphraseDialog(_Modal):
 
     def __init__(self, parent, title: str, message: str, confirm: bool = False) -> None:
         super().__init__(parent, title, 460, 250 if confirm else 200)
-        self._confirm = confirm
 
         frame = ctk.CTkFrame(self, fg_color="transparent")
         frame.pack(fill="both", expand=True, padx=theme.PAD, pady=theme.PAD)
 
         ctk.CTkLabel(frame, text=message, wraplength=410, justify="left",
-                     font=ctk.CTkFont(size=theme.BODY_SIZE)).pack(anchor="w", pady=(0, 10))
+                     font=ctk.CTkFont(size=theme.BODY_SIZE)
+                     ).pack(anchor="w", pady=(0, 10))
 
         self._entry = ctk.CTkEntry(frame, show="•", width=420,
                                    placeholder_text="Passphrase")
         self._entry.pack(fill="x")
         self._entry.bind("<Return>", lambda _e=None: self._ok())
 
-        self._entry2 = None
+        self._entry2: Optional[ctk.CTkEntry] = None
         if confirm:
             self._entry2 = ctk.CTkEntry(frame, show="•", width=420,
                                         placeholder_text="Repeat the passphrase")
@@ -95,7 +101,7 @@ class PassphraseDialog(_Modal):
         if not value:
             self._error.configure(text="The passphrase cannot be empty.")
             return
-        if self._confirm and value != self._entry2.get():
+        if self._entry2 is not None and value != self._entry2.get():
             self._error.configure(text="The two passphrases do not match.")
             return
         self.result = value
@@ -113,7 +119,8 @@ class NewIdentityDialog(_Modal):
         frame.pack(fill="both", expand=True, padx=theme.PAD, pady=theme.PAD)
 
         ctk.CTkLabel(frame, text="Identity name",
-                     font=ctk.CTkFont(size=theme.BODY_SIZE, weight="bold")).pack(anchor="w")
+                     font=ctk.CTkFont(size=theme.BODY_SIZE, weight="bold")
+                     ).pack(anchor="w")
         self._name = ctk.CTkEntry(frame, placeholder_text="alice")
         self._name.pack(fill="x", pady=(2, 2))
         ctk.CTkLabel(frame, text="Becomes the file names alice.key and alice.pub.",
@@ -123,7 +130,8 @@ class NewIdentityDialog(_Modal):
         ctk.CTkLabel(frame, text="Label (optional)",
                      font=ctk.CTkFont(size=theme.BODY_SIZE, weight="bold")
                      ).pack(anchor="w", pady=(theme.PAD, 0))
-        self._comment = ctk.CTkEntry(frame, placeholder_text="Alice <alice@example.com>")
+        self._comment = ctk.CTkEntry(
+            frame, placeholder_text="Alice <alice@example.com>")
         self._comment.pack(fill="x", pady=(2, 0))
 
         ctk.CTkLabel(frame, text="Passphrase",
@@ -260,10 +268,11 @@ class ImportPublicDialog(_Modal):
                                                      size=theme.SMALL_SIZE))
         self._text.pack(fill="both", expand=True, pady=(4, 0))
 
-        ctk.CTkLabel(frame, text="Accepts the compact \"crsys1…\" form or a "
-                                 "\"BEGIN CRSYS PUBLIC KEY\" block.",
+        ctk.CTkLabel(frame, text='Accepts the compact "crsys1…" form or a '
+                                 '"BEGIN CRSYS PUBLIC KEY" block.',
                      text_color=theme.MUTED_FG, wraplength=520, justify="left",
-                     font=ctk.CTkFont(size=theme.SMALL_SIZE)).pack(anchor="w", pady=(4, 0))
+                     font=ctk.CTkFont(size=theme.SMALL_SIZE)
+                     ).pack(anchor="w", pady=(4, 0))
 
         self._error = ctk.CTkLabel(frame, text="", text_color=theme.ERROR_FG,
                                    wraplength=520, justify="left",

@@ -93,7 +93,8 @@ class EncryptPanel(Panel):
         self._signer = IdentityChooser(inner, allow_none=True, width=270)
         self._signer.pack(fill="x")
         # Kept: this one prevents a security mistake rather than explaining a control.
-        hint(inner, "Unsigned, the recipient can read it but cannot prove you wrote it.")
+        hint(inner,
+             "Unsigned, the recipient can read it but cannot prove you wrote it.")
 
         section(inner, "Options")
         self._armor = ctk.CTkCheckBox(inner, text="ASCII output (for email)",
@@ -190,7 +191,7 @@ class EncryptPanel(Panel):
                 return
             if os.path.exists(destination) and not dialogs.ask_yes_no(
                     self.app, "Overwrite?",
-                    "\"%s\" already exists. Overwrite it?"
+                    '"%s" already exists. Overwrite it?'
                     % os.path.basename(destination)):
                 return
 
