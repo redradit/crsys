@@ -1348,6 +1348,87 @@ class TestInterfaceSecurity(GuiTestCase):
         self.app._tabs.set(tab)
 
 
+class TestSignerHint(GuiTestCase):
+    """The warning under "Sign with" has to agree with what is selected.
+
+    It used to be a fixed string, so choosing a signer left "Unsigned, the
+    recipient can read it but cannot prove you wrote it." sitting underneath the
+    signer's own name — a statement about a security property that contradicted
+    the state of the control. Nothing asserted on that text, which is why it
+    survived every run of this suite and was found by opening the application.
+    """
+
+    def hint_text(self) -> str:
+        return self.encrypt._sign_hint.cget("text")
+
+    def select_signer(self, name):
+        """Go through the path the dropdown itself uses, not around it."""
+        chooser = self.encrypt._signer
+        if name is None:
+            chooser._dropdown_callback(chooser.NONE_LABEL)
+            return
+        for label, mapped in chooser._labels.items():
+            if mapped == name:
+                chooser._dropdown_callback(label)
+                return
+        raise AssertionError("identity %r not in the signer menu" % name)
+
+    def test_unsigned_is_the_default_and_says_so(self):
+        self.select_signer(None)
+        self.assertIn("Unsigned", self.hint_text())
+
+    def test_choosing_a_signer_replaces_the_warning(self):
+        self.select_signer("alice")
+        text = self.hint_text()
+        self.assertIn("alice", text)
+        self.assertNotIn("Unsigned", text,
+                         "the hint still claims the message is unsigned")
+
+    def test_the_signed_warning_names_the_property_that_surprises_people(self):
+        # Non-repudiation is the half users do not expect, and SECURITY.md calls
+        # it the wrong default for correspondence. Warning about it is the point
+        # of keeping a hint here at all.
+        self.select_signer("alice")
+        self.assertIn("prove you wrote it", self.hint_text())
+
+    def test_going_back_to_none_restores_the_unsigned_warning(self):
+        self.select_signer("alice")
+        self.select_signer(None)
+        self.assertIn("Unsigned", self.hint_text())
+
+    def test_a_keyring_refresh_does_not_leave_the_hint_stale(self):
+        # set_identities() calls set(), which does not fire the command, so the
+        # hint has to be resynchronised explicitly. If that is ever dropped this
+        # test fails rather than the UI quietly lying again.
+        self.select_signer("alice")
+        self.app.refresh_identities()
+        self.app.update()
+        self.assertNotIn("Unsigned", self.hint_text())
+
+
+class TestPasteFeedback(GuiTestCase):
+    """Paste used to do nothing at all when the clipboard held no text."""
+
+    def test_an_unusable_clipboard_is_reported(self):
+        panel = self.encrypt._input_text
+        original = panel.clipboard_get
+
+        def refuse(*_a, **_k):
+            raise RuntimeError("no text on the clipboard")
+
+        panel.clipboard_get = refuse
+        try:
+            panel.set("untouched")
+            panel.paste()
+            self.app.update()
+            self.assertEqual(panel.get(), "untouched",
+                             "a failed paste must not clear what was there")
+            self.assertIn("Nothing to paste",
+                          self.app.status._label.cget("text"))
+        finally:
+            panel.clipboard_get = original
+
+
 class TestHarness(GuiTestCase):
     """The safety net that makes the other tests diagnosable.
 

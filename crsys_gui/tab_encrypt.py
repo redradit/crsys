@@ -58,7 +58,8 @@ class EncryptPanel(Panel):
 
         # --- text mode
         self._text_frame = ctk.CTkFrame(inner, fg_color="transparent")
-        self._input_text = TextPanel(self._text_frame, "Plaintext message", height=130)
+        self._input_text = TextPanel(self._text_frame, "Plaintext message",
+                                    height=130, on_notice=self._notice)
         self._input_text.pack(fill="both", expand=True, pady=(theme.PAD, 0))
         self._output_text = TextPanel(self._text_frame, "Encrypted message",
                                       height=150, readonly=True)
@@ -90,11 +91,17 @@ class EncryptPanel(Panel):
         self._recipients.pack(fill="both", expand=True)
 
         section(inner, "Sign with")
-        self._signer = IdentityChooser(inner, allow_none=True, width=270)
+        self._signer = IdentityChooser(inner, allow_none=True, width=270,
+                                       command=self._signer_changed)
         self._signer.pack(fill="x")
-        # Kept: this one prevents a security mistake rather than explaining a control.
-        hint(inner,
-             "Unsigned, the recipient can read it but cannot prove you wrote it.")
+        # Kept: this one prevents a security mistake rather than explaining a
+        # control. It has to follow the selection, though. As a fixed string it
+        # said "Unsigned…" underneath a chosen signer, which states the opposite
+        # of the truth about a security property — worse than saying nothing.
+        # And the signed branch warns about the surprising half: signing here is
+        # non-repudiable, which SECURITY.md calls the wrong default for
+        # correspondence.
+        self._sign_hint = hint(inner, "")
 
         section(inner, "Options")
         self._armor = ctk.CTkCheckBox(inner, text="ASCII output (for email)",
@@ -114,14 +121,30 @@ class EncryptPanel(Panel):
                                                       weight="bold"),
                                      command=self._encrypt)
         self._button.pack(fill="x", side="bottom", pady=(theme.PAD, 0))
+        self._signer_changed()
 
     # ------------------------------------------------------------------ state
 
     def on_identities_changed(self, identities: List[Identity]) -> None:
         self._identities = identities
         self._recipients.set_identities([i for i in identities if i.public_key])
+        # set() does not fire the chooser's command, so the hint has to be
+        # resynchronised by hand whenever the identity list changes underneath it.
         self._signer.set_identities([i for i in identities
                                      if i.has_private and not i.error])
+        self._signer_changed()
+
+    def _signer_changed(self) -> None:
+        """Keep the warning under the chooser true to what is selected."""
+        name = self._signer.selected_name()
+        if name is None:
+            self._sign_hint.configure(
+                text="Unsigned: the recipient can read it but cannot prove you "
+                     "wrote it.")
+        else:
+            self._sign_hint.configure(
+                text="Signed as %s. The recipient can prove you wrote it — and "
+                     "so can anyone they show it to." % name)
 
     def _switch_mode(self, mode: str) -> None:
         self._banner.clear()

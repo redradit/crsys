@@ -42,8 +42,14 @@ class CrsysApp(ctk.CTk):
         theme.apply()  # must run before any widget is constructed
 
         self.title("CRSYS  —  public-key encryption")
-        self.geometry(self._settings.get("geometry", "1120x740"))
-        self.minsize(940, 640)
+        # 820, not 740: at 740 the Encrypt panel's side column did not fit and
+        # the Encrypt button itself was cut in half by the window edge — the
+        # primary action of the panel, unreachable until you resized. Found by
+        # opening the application rather than by any test. The minimum moves with
+        # it, because a saved geometry from an older version would otherwise
+        # restore the same clipping.
+        self.geometry(self._settings.get("geometry", "1120x820"))
+        self.minsize(940, 780)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.tasks = TaskRunner(self)

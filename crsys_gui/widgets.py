@@ -25,6 +25,10 @@ class Panel(ctk.CTkFrame):
     def on_identities_changed(self, identities: List[Identity]) -> None:
         """Called after every change to the keyring."""
 
+    def _notice(self, message: str) -> None:
+        """Say something in the status bar without raising a dialog over it."""
+        self.app.status.message(message, "warn")
+
 
 def section(master, text: str) -> ctk.CTkLabel:
     """A field label. Small, uppercase-weight, quiet -- it names, it does not shout."""
@@ -243,7 +247,8 @@ class TextPanel(ctk.CTkFrame):
     """Monospaced text area with copy / paste / clear buttons."""
 
     def __init__(self, master, label: str, height: int = 140,
-                 readonly: bool = False, actions: bool = True) -> None:
+                 readonly: bool = False, actions: bool = True,
+                 on_notice: Optional[Callable[[str], None]] = None) -> None:
         super().__init__(master, fg_color="transparent")
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x")
@@ -269,6 +274,7 @@ class TextPanel(ctk.CTkFrame):
                                    font=ctk.CTkFont(family=theme.MONO,
                                                     size=theme.SMALL_SIZE))
         self._box.pack(fill="both", expand=True, pady=(4, 0))
+        self._on_notice = on_notice
         self._readonly = readonly
         if readonly:
             self._box.configure(state="disabled")
@@ -295,9 +301,16 @@ class TextPanel(ctk.CTkFrame):
 
     def paste(self) -> None:
         try:
-            self.set(self.clipboard_get())
+            text = self.clipboard_get()
         except Exception:
-            pass
+            # An empty clipboard, or contents Tk cannot hand over as text, raises
+            # TclError. Swallowing it silently made the button look broken:
+            # nothing appeared and nothing said why.
+            if self._on_notice:
+                self._on_notice(
+                    "Nothing to paste: the clipboard is empty or holds no text.")
+            return
+        self.set(text)
 
 
 class StatusBar(ctk.CTkFrame):

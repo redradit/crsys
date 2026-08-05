@@ -53,6 +53,7 @@ class DecryptPanel(Panel):
 
         self._text_frame = ctk.CTkFrame(inner, fg_color="transparent")
         self._input_text = TextPanel(self._text_frame, "Encrypted message received",
+                                    on_notice=self._notice,
                                      height=130)
         self._input_text.pack(fill="both", expand=True, pady=(theme.PAD, 0))
         self._output_text = TextPanel(self._text_frame, "Plaintext message",

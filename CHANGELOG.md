@@ -8,7 +8,53 @@ Two version numbers move independently here, and the distinction matters — see
 [README](README.md#two-version-numbers-meaning-different-things). The package
 version is below. The container format version is `1` and has never changed.
 
-## 0.2.0 — not yet released
+## 0.2.1 — not yet released
+
+Three interface defects, all found by opening the application and using it
+rather than by any test. The library and the wire format are untouched.
+
+### Fixed
+
+- **The warning under "Sign with" contradicted the control above it.** It was a
+  fixed string, so selecting a signer left "Unsigned, the recipient can read it
+  but cannot prove you wrote it." sitting directly beneath that signer's name.
+  A user who trusted it would believe an unsigned message was going out when it
+  was signed, or the reverse — and [SECURITY.md](SECURITY.md) specifically
+  advises sending *unsigned* when you would not want a message attributable to
+  you. The hint now follows the selection, and the signed branch warns about the
+  half people do not expect: a CRSYS signature is non-repudiable, so anyone the
+  recipient shows it to can also verify it.
+
+  Nothing had ever asserted on that text, which is why it survived every run of
+  a 289-test suite. Six tests now cover it, including one that drives the
+  dropdown's own callback rather than setting the value around it, and one that
+  checks a keyring refresh does not leave the text stale.
+
+- **Paste did nothing, and said nothing, when the clipboard held no text.** The
+  handler swallowed the `TclError` silently, so the button looked broken. It now
+  reports in the status bar, and a failed paste no longer looks like a paste of
+  nothing.
+
+- **The Encrypt button was cut in half at the default window size.** The panel's
+  side column did not fit in 1120×740, so the primary action of the panel was
+  clipped by the window edge until you resized. The default is now 1120×820 and
+  the minimum moves with it, since a geometry saved by an older version would
+  otherwise restore the same clipping.
+
+  Honest note on this one: the *defect* is confirmed — there is a screenshot of
+  the button cut through the glyphs. The *fix* is not visually confirmed. A
+  Windows system window took the foreground partway through the session and
+  blocked further input, and two attempts to measure the layout
+  programmatically returned nonsense because Tk gives unmapped widgets no
+  geometry. The change is small and in the right direction, but it deserves a
+  glance from a human before anyone calls it verified.
+
+### Wire format
+
+**Unchanged.** Container version `1`, key file version `1`. No file in `crsys/`
+was touched by this release.
+
+## 0.2.0 — 2026-08-04
 
 **Security release. It fixes a universal signature forgery present in 0.1.0.**
 

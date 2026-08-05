@@ -97,6 +97,7 @@ class SignPanel(Panel):
         self._verify_banner = Banner(inner)
 
         self._verify_text = TextPanel(inner, "…or paste the signature here",
+                                     on_notice=self._notice,
                                       height=110)
         self._verify_text.pack(fill="both", expand=True, pady=(theme.PAD, 0))
 
