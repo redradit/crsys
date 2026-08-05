@@ -174,6 +174,10 @@ Honest list of things a reviewer would flag:
    an independent implementation is now possible to write and check. Until
    somebody writes one, no specification ambiguity has been shaken out by
    anything other than this codebase reading its own mind.
+   [CHALLENGE.md](CHALLENGE.md) is the standing invitation to do it; the two
+   places where SPEC.md used to send the reader into `crsys/` for a list of
+   curve points have been inlined, because that is exactly the wall a second
+   implementer would hit first.
 
 7. **Supply chain.** Security depends on `cryptography` (and OpenSSL beneath
    it), plus `argon2-cffi` when present. That is a strength — those are audited —

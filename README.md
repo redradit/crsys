@@ -429,6 +429,16 @@ SECURITY.md            threat model and known limitations
 CRSYS.pyw              double-click launcher for the GUI
 ```
 
+## Wanted: a second implementation
+
+[CHALLENGE.md](CHALLENGE.md) asks for the one thing this project cannot do for
+itself. Write a decrypter from [SPEC.md](SPEC.md) alone, without reading
+`crsys/`, and check it against the nine frozen vectors in
+`tests/vectors.json` — which are self-contained, private keys included and
+published on purpose. If your implementation disagrees with a vector, or you had
+to open the Python to get it working, the specification is what failed, and that
+is the finding worth having.
+
 ## Contributing
 
 [CONTRIBUTING.md](CONTRIBUTING.md) covers running the tests, the lint bar, and

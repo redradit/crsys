@@ -69,9 +69,11 @@ MUST NOT be done.
 public_key = x25519_pub(32) || ed25519_pub(32)          // 64 bytes
 ```
 
-An implementation SHOULD reject an `x25519_pub` that is one of the well-known
-small-order points of Curve25519 (the twelve-value list used by libsodium; see
-`crsys/keys.py`), as an early and clear error on obviously bad key material.
+An implementation MAY reject an `x25519_pub` that is one of the well-known
+small-order points of Curve25519 — libsodium documents such a list — as an early
+and clear error on obviously bad key material. It is optional, and this
+specification deliberately does not reproduce the list, because an implementation
+that relies on it is doing the wrong thing.
 
 This is a convenience, not the security control. RFC 7748 requires masking the
 high bit of the u-coordinate before use, after which several entries in that
@@ -84,8 +86,24 @@ small-order points of Ed25519.** This one is not a convenience. With the
 identity point as the public key, the signature `(R = identity, S = 0)`
 satisfies the verification equation for *every* message — a universal forgery
 requiring no private key whatsoever. Several libraries, OpenSSL among them,
-accept such keys and verify such signatures. The eight encodings are listed in
-`crsys/keys.py`; the principled form of the check is `[8]A != identity`.
+accept such keys and verify such signatures. The principled form of the check is
+`[8]A != identity`; the eight encodings, so that no implementation has to read
+another one's source to find them, are:
+
+```
+0000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000080
+0100000000000000000000000000000000000000000000000000000000000000
+26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05
+26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85
+c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a
+c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa
+ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f
+```
+
+The last four are non-canonical encodings of the first four — the high bit set,
+or a y-coordinate above the field prime. An implementation that only rejects the
+canonical forms is still forgeable.
 
 This matters because the signer's public key is read out of the container
 trailer (§3.5), so it is chosen by whoever produced the message. See "Taming the
@@ -379,6 +397,10 @@ The 4-byte checksum catches transcription errors. It is not a security control.
 ---
 
 ## 6. Conformance
+
+If you are writing one, [CHALLENGE.md](CHALLENGE.md) explains what to report and
+what the vectors contain. This document is meant to be sufficient on its own — if
+it is not, that is the defect worth reporting.
 
 An implementation is conformant if it decrypts every vector in
 `tests/vectors.json` to the stated plaintext, reports the stated signer, and
