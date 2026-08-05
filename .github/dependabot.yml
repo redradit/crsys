@@ -1,5 +1,12 @@
 version: 2
 
+# No `labels:` here on purpose. Dependabot cannot create a label that does not
+# already exist in the repository -- it rejects the whole value and comments the
+# complaint on every pull request it opens. This repository has the nine default
+# labels and no "dependencies" one. The commit-message prefixes below ("ci" and
+# "deps") already say what a label would, so nothing is lost. If a label is
+# wanted, create it in the repository first, then add it back here.
+
 updates:
   # ci.yml pins actions/checkout@v4 and actions/setup-python@v5 in four places.
   # Nothing else in this repository would ever mention that a v5 or a v6 exists.
@@ -10,7 +17,6 @@ updates:
       day: "tuesday"
     commit-message:
       prefix: "ci"
-    labels: ["dependencies"]
 
   # ruff and mypy are pinned to exact versions deliberately: a linter that floats
   # can turn a green build red with no code change, and this project has already
@@ -40,4 +46,3 @@ updates:
       - dependency-name: "mypy"
     commit-message:
       prefix: "deps"
-    labels: ["dependencies"]
