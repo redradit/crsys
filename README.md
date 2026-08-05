@@ -9,6 +9,10 @@ graphical interface or the command line.
 X25519 (ECDH)  +  HKDF-SHA256  +  ChaCha20-Poly1305 / AES-256-GCM  +  Ed25519
 ```
 
+The name is a name. It is not an acronym and does not stand for anything, so
+there is nothing to look up. It does appear on the wire: the container's four
+magic bytes are `CRSY`, the same string cut to the width the header field allows.
+
 ## An honest premise
 
 **The mathematical primitives are not invented here, and that is deliberate.** A
