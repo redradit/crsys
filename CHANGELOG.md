@@ -8,7 +8,7 @@ Two version numbers move independently here, and the distinction matters — see
 [README](README.md#two-version-numbers-meaning-different-things). The package
 version is below. The container format version is `1` and has never changed.
 
-## 0.2.1 — not yet released
+## 0.2.1 — 2026-08-05
 
 Three interface defects, all found by opening the application and using it
 rather than by any test. The library and the wire format are untouched.
