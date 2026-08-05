@@ -38,6 +38,13 @@ crsys-gui = "crsys_gui.app:main"
 [tool.setuptools]
 packages = ["crsys", "crsys_gui"]
 
+# PEP 561. Without this marker a consumer running mypy sees every name in crsys
+# as Any, so the type checking in CI benefits only this repository. crsys_gui is
+# deliberately not marked: it is an application rather than a library, and its
+# annotations are thinner because most of what it passes around are Tk widgets.
+[tool.setuptools.package-data]
+crsys = ["py.typed"]
+
 # ----------------------------------------------------------------------- ruff
 #
 # Curated, not maximal. Ruff ships about a thousand rules; switching on all of

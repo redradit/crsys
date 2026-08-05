@@ -51,6 +51,11 @@ python -m mypy
 Both must be clean; both block in CI. Paths and settings live in
 `pyproject.toml`, so a local run and CI cannot drift.
 
+Both are pinned to exact versions in the `dev` extra, and Dependabot opens a
+weekly pull request when either moves. Expect a ruff bump to arrive with new
+findings: fix them in that same pull request, so the bump and its consequences
+land together rather than leaving `main` red.
+
 The configuration is curated, not maximal, and every rule family left out has
 its reason written beside it. If a rule fires on something deliberate, add a
 narrow `# noqa: RULE` **with the reason on the adjacent line** rather than

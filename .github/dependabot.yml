@@ -1,0 +1,43 @@
+version: 2
+
+updates:
+  # ci.yml pins actions/checkout@v4 and actions/setup-python@v5 in four places.
+  # Nothing else in this repository would ever mention that a v5 or a v6 exists.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+    commit-message:
+      prefix: "ci"
+    labels: ["dependencies"]
+
+  # ruff and mypy are pinned to exact versions deliberately: a linter that floats
+  # can turn a green build red with no code change, and this project has already
+  # spent three CI runs on a signal it could not trust. But a pin with no
+  # counterweight rots silently, which is the failure this file exists to
+  # prevent. The pyproject comment says bumping them "is a commit, with the new
+  # findings in the diff" -- this is what produces that commit.
+  #
+  # allow: by name rather than by dependency-type. Dependabot's pip parser does
+  # not classify entries under project.optional-dependencies as development
+  # dependencies (dependabot-core#10606), so a development-only filter would
+  # match nothing here. Naming them also keeps Dependabot away from
+  # cryptography>=42.0, which is a compatibility floor this library declares
+  # rather than a pin to be raised automatically -- moving it would narrow what
+  # the package claims to support, and that is not a robot's call.
+  #
+  # Deliberately not grouped into one pull request: a ruff bump can introduce new
+  # findings that need code changes, and reviewing those in the same diff as a
+  # mypy bump makes both harder to judge.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+    allow:
+      - dependency-name: "ruff"
+      - dependency-name: "mypy"
+    commit-message:
+      prefix: "deps"
+    labels: ["dependencies"]
