@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CRSYS — hybrid public-key encryption</title>
+<meta name="description" content="Encrypt and sign files with a keypair, from the command line or a window. X25519 + HKDF-SHA256 + ChaCha20-Poly1305 / AES-256-GCM + Ed25519. Open source, MIT, not audited — and honest about it.">
+<style>
+:root{
+  --bg:#0a0c11; --surface:#11141c; --raised:#161a24; --raised2:#1c212e; --border:#232839;
+  --text:#e7e9ef; --muted:#8b93a7; --faint:#5a6178;
+  --accent:#6366f1; --accent-hi:#8b90ff; --accent-dim:#23264a;
+  --ok:#4ade80; --warn:#fbbf24; --err:#f87171;
+  --str:#7ee7c0;
+  --mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --maxw:1120px;
+}
+:root[data-theme="light"]{
+  --bg:#fcfdff; --surface:#ffffff; --raised:#f2f4fb; --raised2:#e9edf7; --border:#e2e6f1;
+  --text:#141824; --muted:#586178; --faint:#97a1b7;
+  --accent:#4f46e5; --accent-hi:#4033c7; --accent-dim:#e7e9fc;
+  --ok:#15a34a; --warn:#b45309; --err:#dc2626; --str:#0d7a5f;
+}
+@media (prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+    --bg:#fcfdff; --surface:#ffffff; --raised:#f2f4fb; --raised2:#e9edf7; --border:#e2e6f1;
+    --text:#141824; --muted:#586178; --faint:#97a1b7;
+    --accent:#4f46e5; --accent-hi:#4033c7; --accent-dim:#e7e9fc;
+    --ok:#15a34a; --warn:#b45309; --err:#dc2626; --str:#0d7a5f;
+  }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *{transition:none!important;animation:none!important}
+  .byte:hover{transform:none}
+  .reveal{opacity:1!important;transform:none!important}
+}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);
+  line-height:1.62;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--accent-hi);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+code,kbd,.mono{font-family:var(--mono)}
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s ease}
+.reveal.in{opacity:1;transform:none}
+
+/* nav */
+nav{position:sticky;top:0;z-index:30;backdrop-filter:blur(12px);
+  background:color-mix(in srgb,var(--bg) 80%,transparent);border-bottom:1px solid var(--border)}
+.navrow{display:flex;align-items:center;gap:18px;height:60px}
+.brand{font-family:var(--mono);font-weight:700;font-size:19px;letter-spacing:.02em;color:var(--text)}
+.brand .dot{color:var(--accent)}
+.navlinks{margin-left:auto;display:flex;gap:22px;align-items:center;font-size:14px}
+.navlinks a{color:var(--muted)}
+.navlinks a:hover{color:var(--text);text-decoration:none}
+.theme-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;
+  width:34px;height:34px;cursor:pointer;font-size:15px;display:grid;place-items:center}
+.theme-btn:hover{color:var(--text);border-color:var(--accent)}
+#progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);z-index:40;width:0}
+@media(max-width:680px){.navlinks a.hide-sm{display:none}}
+
+/* hero */
+.hero{position:relative;padding:88px 0 68px;border-bottom:1px solid var(--border);overflow:hidden}
+#heroCanvas{position:absolute;inset:0;width:100%;height:100%;opacity:.5;pointer-events:none}
+.hero::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(70% 80% at 82% -20%,var(--accent-dim),transparent 68%)}
+.hero .wrap{position:relative;z-index:2}
+.eyebrow{font-family:var(--mono);font-size:13px;color:var(--accent-hi);letter-spacing:.09em;
+  text-transform:uppercase;margin-bottom:18px}
+h1{font-family:var(--mono);font-size:clamp(29px,5.1vw,52px);line-height:1.08;margin:0 0 20px;
+  letter-spacing:-.035em;font-weight:700;text-wrap:balance}
+.lede{font-size:clamp(17px,2.3vw,21px);color:var(--muted);max-width:600px;margin:0 0 28px}
+.stack{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 30px;font-family:var(--mono);font-size:13px}
+.chip{background:var(--raised);border:1px solid var(--border);border-radius:7px;padding:6px 11px;color:var(--text)}
+.chip .op{color:var(--faint);margin:0 3px}
+.cta{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:9px;padding:12px 20px;border-radius:10px;
+  font-weight:600;font-size:15px;cursor:pointer;border:1px solid transparent}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-hi);text-decoration:none}
+.btn-ghost{background:transparent;border-color:var(--border);color:var(--text)}
+.btn-ghost:hover{border-color:var(--accent);text-decoration:none}
+.install{margin-top:28px;font-family:var(--mono);font-size:13.5px;background:var(--surface);
+  border:1px solid var(--border);border-radius:10px;padding:13px 15px;max-width:560px;
+  display:flex;align-items:center;gap:12px}
+.install .prompt{color:var(--accent)}
+.install code{color:var(--text);flex:1;overflow-x:auto;white-space:nowrap}
+.copybtn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;
+  padding:5px 10px;font-size:12px;cursor:pointer;font-family:var(--sans);white-space:nowrap}
+.copybtn:hover{color:var(--text);border-color:var(--accent)}
+
+/* sections */
+section{padding:66px 0;border-bottom:1px solid var(--border)}
+.kicker{font-family:var(--mono);font-size:13px;color:var(--accent-hi);text-transform:uppercase;
+  letter-spacing:.09em;margin:0 0 12px}
+h2{font-family:var(--mono);font-size:clamp(23px,3.5vw,33px);margin:0 0 16px;
+  letter-spacing:-.025em;font-weight:700;text-wrap:balance}
+h3{font-size:18px;margin:0 0 8px}
+.section-lede{color:var(--muted);max-width:660px;font-size:17px;margin:0 0 38px}
+
+/* premise */
+.premise{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--warn);
+  border-radius:12px;padding:28px 30px}
+.premise h2{margin-top:0}
+.premise p{margin:0 0 14px}
+.premise p:last-child{margin-bottom:0}
+.premise strong{color:var(--text)}
+
+/* quickstart terminal */
+.termwrap{max-width:820px}
+.tabs{display:flex;gap:4px;margin-bottom:-1px}
+.tab{font-family:var(--mono);font-size:13px;padding:9px 16px;border:1px solid var(--border);
+  border-bottom:none;border-radius:9px 9px 0 0;background:var(--surface);color:var(--muted);cursor:pointer}
+.tab.on{background:var(--raised);color:var(--text);border-color:var(--border)}
+.term{background:var(--raised);border:1px solid var(--border);border-radius:0 12px 12px 12px;overflow:hidden}
+.term-bar{display:flex;align-items:center;gap:7px;padding:11px 15px;border-bottom:1px solid var(--border);background:var(--surface)}
+.term-bar .td{width:11px;height:11px;border-radius:50%;background:var(--border)}
+.term-bar .tt{margin-left:8px;font-family:var(--mono);font-size:12px;color:var(--faint)}
+.term pre{margin:0;padding:20px 22px;font-family:var(--mono);font-size:13.5px;line-height:1.75;
+  overflow-x:auto;color:var(--text)}
+.term .cmt{color:var(--faint)}
+.term .pr{color:var(--accent);user-select:none}
+.term .fl{color:var(--accent-hi)}
+.term .st{color:var(--str)}
+.term .out{color:var(--muted)}
+.panel{display:none}
+.panel.on{display:block}
+
+/* feature cards */
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media(max-width:820px){.grid3{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px}
+.card .ico{display:block;margin-bottom:14px;color:var(--accent-hi)}
+.card .ico svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round}
+.card p{margin:0;color:var(--muted);font-size:15px}
+.card .verd{font-family:var(--mono);font-size:12px;margin-top:14px;padding-top:14px;
+  border-top:1px solid var(--border);color:var(--faint)}
+
+/* pipeline */
+.pipe{display:grid;grid-template-columns:repeat(5,1fr);gap:0;align-items:stretch;position:relative}
+@media(max-width:760px){.pipe{grid-template-columns:1fr;gap:0}}
+.stage{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 18px;
+  position:relative;z-index:2;margin:0 8px}
+@media(max-width:760px){.stage{margin:0 0 34px}}
+.stage .sn{font-family:var(--mono);font-size:12px;color:var(--accent-hi);letter-spacing:.06em}
+.stage h4{margin:8px 0 6px;font-size:15px;font-family:var(--mono);font-weight:700;letter-spacing:-.01em}
+.stage p{margin:0;font-size:13px;color:var(--muted)}
+.pipe .conn{position:absolute;top:50%;height:2px;background:var(--border);z-index:1;overflow:hidden}
+.pipe .conn::after{content:"";position:absolute;left:-40%;top:0;width:40%;height:100%;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent)}
+.pipe.in .conn::after{animation:flow 2.6s ease-in-out .3s infinite}
+@media(max-width:760px){.pipe .conn{display:none}}
+@keyframes flow{0%{left:-40%}60%,100%{left:120%}}
+
+/* inspector */
+.inspector{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.map{display:flex;gap:3px;padding:18px 18px 2px;overflow-x:auto}
+.map::-webkit-scrollbar{height:6px}
+.map::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.seg{flex:0 0 auto;height:42px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11.5px;cursor:pointer;border:1px solid transparent;color:#fff;
+  padding:0 10px;white-space:nowrap;transition:filter .1s}
+@media(max-width:560px){.seg{font-size:10.5px;padding:0 8px}}
+.seg:hover{filter:brightness(1.15)}
+.seg.on{outline:2px solid var(--text);outline-offset:1px}
+.seg.s-header{background:#4a3f7a;flex-grow:0}
+.seg.s-env{background:#2b5e52;flex-grow:1}
+.seg.s-pay{background:#5a4a20;flex-grow:2}
+.seg.s-trail{background:#5e2b3a;flex-grow:1}
+.maplabel{padding:7px 18px 0;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.armored{padding:16px 20px;margin:16px 18px 0;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
+.armored pre{margin:0;font-family:var(--mono);font-size:12px;line-height:1.5;color:var(--muted);
+  white-space:pre-wrap;word-break:break-all;max-height:120px;overflow:auto}
+.armored .marker{color:var(--accent-hi)}
+.insp-body{display:grid;grid-template-columns:1fr 300px;margin-top:16px;border-top:1px solid var(--border)}
+@media(max-width:760px){.insp-body{grid-template-columns:1fr}}
+.bytes{padding:20px;display:flex;flex-wrap:wrap;gap:5px;align-content:flex-start}
+.byte{width:33px;height:29px;display:grid;place-items:center;border-radius:5px;font-family:var(--mono);
+  font-size:11px;cursor:pointer;border:1px solid transparent;transition:transform .08s;user-select:none}
+.byte:hover{transform:translateY(-2px)}
+.byte.active{outline:2px solid var(--text);outline-offset:1px}
+.f-magic{background:#3b2f5e;color:#d9ccff}.f-version{background:#1e3a5f;color:#bcd8ff}
+.f-suite{background:#0f3d33;color:#9ff0d6}.f-flags{background:#5a3a10;color:#ffd79c}
+.f-reserved{background:var(--raised2);color:var(--faint)}.f-chunk{background:#3d2140;color:#f0b3f5}
+.f-commit{background:#243149;color:#a9c2e8}.f-count{background:#4a1f2a;color:#ffb3c1}
+:root[data-theme="light"] .f-magic{background:#ece4ff;color:#5b3fb0}
+:root[data-theme="light"] .f-version{background:#e0edff;color:#1e5aa8}
+:root[data-theme="light"] .f-suite{background:#d6f5ea;color:#0b7a5f}
+:root[data-theme="light"] .f-flags{background:#ffeccf;color:#a4620a}
+:root[data-theme="light"] .f-chunk{background:#f8dcfb;color:#9333a8}
+:root[data-theme="light"] .f-commit{background:#dce8f9;color:#2c5a94}
+:root[data-theme="light"] .f-count{background:#ffd9e0;color:#b02744}
+.detail{border-left:1px solid var(--border);padding:22px;background:var(--raised)}
+@media(max-width:760px){.detail{border-left:none;border-top:1px solid var(--border)}}
+.detail .dfield{font-family:var(--mono);font-size:13px;color:var(--accent-hi);margin:0 0 4px}
+.detail .doff{font-family:var(--mono);font-size:11px;color:var(--faint);margin:0 0 12px}
+.detail .dtext{font-size:14px;color:var(--muted);margin:0}
+.detail .dval{font-family:var(--mono);font-size:12.5px;background:var(--bg);border:1px solid var(--border);
+  border-radius:6px;padding:8px 10px;margin:12px 0 0;word-break:break-all;color:var(--text)}
+.legend{display:flex;flex-wrap:wrap;gap:6px;padding:16px 20px 20px;font-family:var(--mono);font-size:11px}
+.legend span{padding:3px 8px;border-radius:5px}
+
+/* comparison */
+.cmp{width:100%;border-collapse:collapse;font-size:14.5px}
+.cmp-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
+.cmp th,.cmp td{padding:13px 16px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+.cmp thead th{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--faint);background:var(--surface)}
+.cmp thead th.me{color:var(--accent-hi)}
+.cmp tbody tr:last-child td{border-bottom:none}
+.cmp td:first-child{color:var(--text);font-weight:500}
+.cmp td{color:var(--muted)}
+.cmp .yes{color:var(--ok)}.cmp .no{color:var(--err)}.cmp .par{color:var(--warn)}
+.cmp col.mecol,.cmp td.mecell{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.cmp-note{color:var(--faint);font-size:13px;margin-top:14px}
+
+/* record */
+.record-head{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.bignum{font-size:58px;font-weight:800;color:var(--accent-hi);font-family:var(--mono);line-height:1}
+.defects{list-style:none;padding:0;margin:26px 0 0;display:grid;gap:10px}
+.defects li{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:15px 18px;
+  display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start;font-size:15px}
+.defects .n{font-family:var(--mono);color:var(--faint);font-size:13px;padding-top:1px}
+.defects .worst{border-color:var(--err);border-left:3px solid var(--err)}
+.defects .tag{font-family:var(--mono);font-size:11px;color:var(--err);display:block;margin-top:5px}
+.defects .src{color:var(--faint);font-size:13px}
+
+/* threat model */
+.threat{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:760px){.threat{grid-template-columns:1fr}}
+.tcol{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px}
+.tcol.good{border-top:3px solid var(--ok)}
+.tcol.bad{border-top:3px solid var(--err)}
+.tcol h3{font-family:var(--mono);font-size:15px;display:flex;align-items:center;gap:9px;margin-bottom:16px}
+.tcol ul{list-style:none;padding:0;margin:0;display:grid;gap:11px}
+.tcol li{font-size:14.5px;color:var(--muted);padding-left:24px;position:relative;line-height:1.5}
+.tcol li b{color:var(--text);font-weight:600}
+.tcol.good li::before{content:"✓";position:absolute;left:0;color:var(--ok);font-weight:700}
+.tcol.bad li::before{content:"✕";position:absolute;left:0;color:var(--err);font-weight:700}
+
+/* challenge */
+.challenge{background:linear-gradient(135deg,var(--accent-dim),transparent);
+  border:1px solid var(--accent);border-radius:14px;padding:34px}
+.challenge h2{margin-top:0}
+.challenge ol{color:var(--muted);padding-left:20px;margin:16px 0 24px;max-width:620px}
+.challenge li{margin-bottom:8px}
+
+/* versions */
+.versions{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:600px){.versions{grid-template-columns:1fr}}
+.vcard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:22px}
+.vcard .vlabel{font-family:var(--mono);font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+.vcard .vnum{font-family:var(--mono);font-size:30px;font-weight:700;margin:6px 0 10px}
+.vcard p{margin:0;color:var(--muted);font-size:14px}
+
+/* footer */
+footer{padding:52px 0 62px}
+.foot-grid{display:flex;justify-content:space-between;flex-wrap:wrap;gap:30px}
+.foot-links{display:flex;gap:44px;flex-wrap:wrap}
+.foot-col h4{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
+  margin:0 0 12px;font-family:var(--mono)}
+.foot-col a{display:block;color:var(--muted);font-size:14px;margin-bottom:8px}
+.foot-col a:hover{color:var(--text);text-decoration:none}
+.foot-note{color:var(--faint);font-size:13px;margin-top:38px;max-width:600px}
+.warnbar{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:11px 15px;
+  font-size:13px;color:var(--muted);display:inline-flex;gap:9px;align-items:center;margin-top:14px}
+.warnbar .d{width:7px;height:7px;border-radius:50%;background:var(--warn);flex:none}
+</style>
+</head>
+<body>
+<div id="progress"></div>
+
+<nav>
+  <div class="wrap navrow">
+    <span class="brand">crsys<span class="dot">.</span></span>
+    <div class="navlinks">
+      <a href="#start" class="hide-sm">Quickstart</a>
+      <a href="#how" class="hide-sm">How it works</a>
+      <a href="#compare" class="hide-sm">Compare</a>
+      <a href="#record" class="hide-sm">The record</a>
+      <a href="https://github.com/redradit/crsys">GitHub</a>
+      <button class="theme-btn" id="themeToggle" aria-label="Toggle light or dark theme" title="Toggle theme">◐</button>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <canvas id="heroCanvas" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <p class="eyebrow">Hybrid public-key encryption</p>
+    <h1>Encrypt and sign files<br>with a keypair.</h1>
+    <p class="lede">From the command line or a window. Standard primitives, a frozen wire format, and an unusually honest account of what it does and does not protect.</p>
+    <div class="stack">
+      <span class="chip">X25519</span><span class="chip">HKDF-SHA256</span>
+      <span class="chip">ChaCha20-Poly1305 <span class="op">/</span> AES-256-GCM</span>
+      <span class="chip">Ed25519</span>
+    </div>
+    <div class="cta">
+      <a class="btn btn-primary" href="https://github.com/redradit/crsys">View on GitHub →</a>
+      <a class="btn btn-ghost" href="#how">See how it works</a>
+    </div>
+    <div class="install">
+      <span class="prompt">$</span>
+      <code id="installcmd">pip install "crsys[gui,argon2] @ git+https://github.com/redradit/crsys"</code>
+      <button class="copybtn" data-copy="installcmd">copy</button>
+    </div>
+  </div>
+</header>
+
+<section id="premise">
+  <div class="wrap reveal">
+    <div class="premise">
+      <p class="kicker">An honest premise</p>
+      <h2>This has not been independently audited.</h2>
+      <p>It is a solo project. It was written carefully, it reimplements <strong>no</strong> cryptographic primitive — everything comes from <a href="https://cryptography.io">pyca/cryptography</a>, backed by OpenSSL — and it has a test suite that deliberately attacks it. That is not the same thing as review by people whose job is breaking things.</p>
+      <p>For data whose compromise would have serious consequences, use <a href="https://age-encryption.org">age</a> or GnuPG. Their value is not the algorithm; it is the number of competent people who have tried to break them and failed.</p>
+      <p>What CRSYS offers instead is a small, readable protocol, a <strong>normative specification</strong> anyone can implement against, and a public record of every defect found so far — including the serious ones. Most projects hide that list. Here it is the point.</p>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap reveal">
+    <p class="kicker">Quickstart</p>
+    <h2>Three commands, or three lines.</h2>
+    <p class="section-lede">A keypair, a sealed file, and the check that actually matters on the way back out. Real commands, real output — nothing here is mocked up.</p>
+    <div class="termwrap">
+      <div class="tabs">
+        <button class="tab on" data-tab="cli">Command line</button>
+        <button class="tab" data-tab="lib">Python library</button>
+      </div>
+      <div class="term">
+        <div class="term-bar"><span class="td"></span><span class="td"></span><span class="td"></span><span class="tt" id="termTitle">bash</span></div>
+        <div class="panel on" data-panel="cli">
+<pre><span class="cmt"># make an identity — prints the fingerprint you verify out of band</span>
+<span class="pr">$</span> python -m crsys keygen <span class="fl">-o</span> alice <span class="fl">-c</span> <span class="st">"Alice &lt;alice@example.com&gt;"</span>
+<span class="out">Fingerprint : da60-ed69-9846-a0e6</span>
+
+<span class="cmt"># encrypt for bob, signed by alice, in one pass</span>
+<span class="pr">$</span> python -m crsys encrypt <span class="fl">-r</span> bob.pub <span class="fl">-s</span> alice.key <span class="fl">-i</span> contract.pdf <span class="fl">-o</span> contract.crsys
+<span class="out">Encrypted 48213 bytes -> 48431 bytes  [chacha20poly1305]</span>
+
+<span class="cmt"># decrypt — and REFUSE it unless alice really signed it</span>
+<span class="pr">$</span> python -m crsys decrypt <span class="fl">-k</span> bob.key <span class="fl">-i</span> contract.crsys <span class="fl">-o</span> out.pdf <span class="fl">--require-signer</span> alice.pub
+<span class="out">Decrypted 48213 bytes  ·  signed by da60-ed69-9846-a0e6 ✓</span></pre>
+        </div>
+        <div class="panel" data-panel="lib">
+<pre><span class="cmt"># the same round trip, from Python</span>
+<span class="fl">from</span> crsys <span class="fl">import</span> KeyPair, encrypt_bytes, decrypt_bytes
+
+alice = KeyPair.generate()
+bob   = KeyPair.generate()
+
+sealed = encrypt_bytes(<span class="st">b"the note"</span>, [bob.public_key], signer=alice)
+result = decrypt_bytes(sealed, bob, expected_signer=alice.public_key)
+
+<span class="cmt"># result.plaintext == b"the note", and the signature is checked</span></pre>
+        </div>
+      </div>
+    </div>
+    <p class="cmp-note"><code>--require-signer</code> is the important part: without it, an unsigned message is accepted silently. With it, decryption fails when the signature is missing or belongs to somebody else.</p>
+  </div>
+</section>
+
+<section id="does">
+  <div class="wrap reveal">
+    <p class="kicker">What it does</p>
+    <h2>Three jobs, done plainly.</h2>
+    <div class="grid3">
+      <div class="card">
+        <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10.5" width="16" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/><circle cx="12" cy="15" r="1.3" fill="currentColor" stroke="none"/></svg></span>
+        <h3>Encrypt to anyone</h3>
+        <p>A fresh ephemeral key per recipient per message. Two encryptions of the same file are uncorrelated. One message, many recipients, each with their own sealed envelope.</p>
+        <p class="verd">ChaCha20-Poly1305 · AES-256-GCM</p>
+      </div>
+      <div class="card">
+        <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4l5 5L9 20l-5 1 1-5z"/><path d="M13 6l5 5"/></svg></span>
+        <h3>Sign, or don't</h3>
+        <p>An Ed25519 signature binds the sender's whole identity, the header, and the plaintext to the message — so a recipient cannot re-address or re-attribute it. Optional, because a signature is non-repudiable and that is not always what you want.</p>
+        <p class="verd">Ed25519 · covers header + recipients</p>
+      </div>
+      <div class="card">
+        <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="4"/><path d="M11 11l9 9M17 17l2-2M14 14l2-2"/></svg></span>
+        <h3>Protect keys at rest</h3>
+        <p>Private keys are held under a memory-hard KDF, with the cost parameters authenticated so they cannot be downgraded. On Windows the key file's ACL is tightened and verified, not just flagged read-only.</p>
+        <p class="verd">Argon2id · scrypt fallback</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap reveal">
+    <p class="kicker">How it works</p>
+    <h2>One pass, five moves.</h2>
+    <p class="section-lede">No primitive is invented here. The design is in how standard ones are composed — and the whole of it fits in one line of data flow.</p>
+    <div class="pipe" id="pipe">
+      <div class="stage"><div class="sn">01</div><h4>Ephemeral key</h4><p>A throwaway X25519 keypair, generated fresh for this recipient, this message.</p></div>
+      <div class="stage"><div class="sn">02</div><h4>Agree</h4><p>ECDH against the recipient's public key yields a shared secret only they can recompute.</p></div>
+      <div class="stage"><div class="sn">03</div><h4>Derive</h4><p>HKDF-SHA256 turns it into a key, binding both public keys so no third party can be substituted.</p></div>
+      <div class="stage"><div class="sn">04</div><h4>Seal</h4><p>The payload is sealed in AEAD chunks — the header is authenticated with every one.</p></div>
+      <div class="stage"><div class="sn">05</div><h4>Sign</h4><p>Optionally, Ed25519 over the header, the recipients and the plaintext hash. Then it's a container.</p></div>
+      <div class="conn" id="conn"></div>
+    </div>
+  </div>
+</section>
+
+<section id="anatomy">
+  <div class="wrap reveal">
+    <p class="kicker">Anatomy of a container</p>
+    <h2>Nothing hidden on the wire.</h2>
+    <p class="section-lede">A real CRSYS message — a signed note to one recipient, from the project's published test vectors. The header is cleartext but fully authenticated. Click a region, then any byte.</p>
+    <div class="inspector">
+      <div class="map" id="cmap">
+        <div class="seg s-header on" data-region="header">Header · 46 B</div>
+        <div class="seg s-env" data-region="env">Envelope · 88 B</div>
+        <div class="seg s-pay" data-region="pay">Payload chunks</div>
+        <div class="seg s-trail" data-region="trail">Signature · 128 B</div>
+      </div>
+      <div class="maplabel">the whole container, to scale — one envelope here because there is one recipient</div>
+      <div class="armored">
+        <pre><span class="marker">-----BEGIN CRSYS MESSAGE-----</span>
+Q1JTWQEBAQAAAQAA8o3esqAjgbzVNSf/5BLk4hsiqg6WHnPrAqPvu68trpkAAVGXvLfvEfrmQL9W
+lCEuAIPfPW+oVsZU8iYOAWh1IMEwrVPSR28JtyvTGLy8TtTN5Xtj5a5ftJoB64EZthl7XKpRW8l1
+LjdkZw92wRDziZlMP+1xOjnVKK8AAAAevA4TzpsKy7JIWRNizjJ0YcadT70475/AjS/HiRjpAAAA
+kKwN5W4TdPbEDXtP94rNG5dH7ZxDvCuNCer+TnJklErtG2U9BFRsu0U/o9lnMY6gpV9mgJxVvzgA
+1NNLodRNMMZv1IfZrXx6mszWlOY4U+bX/QhhGJay4a1RywtFOawlpkF/ZMtOYQ+7P6bUSKcqGt4+
+s8btQZexVZNvkmiq+87CgAsg/r+GG/lppKPfSQENtg==
+<span class="marker">-----END CRSYS MESSAGE-----</span></pre>
+      </div>
+      <div class="insp-body">
+        <div class="bytes" id="byteGrid" aria-label="Container header bytes"></div>
+        <div class="detail" id="byteDetail"></div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </div>
+</section>
+
+<section id="compare">
+  <div class="wrap reveal">
+    <p class="kicker">Where it stands</p>
+    <h2>Honest about the company it keeps.</h2>
+    <p class="section-lede">CRSYS is roughly age-shaped, plus signatures — and minus the two things that matter most: an audit, and years of people trying to break it. A comparison that hid that would not be worth reading.</p>
+    <div class="cmp-scroll">
+      <table class="cmp">
+        <colgroup><col><col class="mecol"><col><col></colgroup>
+        <thead><tr><th>&nbsp;</th><th class="me">CRSYS</th><th>age</th><th>GnuPG</th></tr></thead>
+        <tbody>
+          <tr><td>Public-key encryption</td><td class="mecell yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+          <tr><td>Signs messages</td><td class="mecell yes">Yes</td><td class="no">No</td><td class="yes">Yes</td></tr>
+          <tr><td>Streams large files</td><td class="mecell yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+          <tr><td>Normative spec + test vectors</td><td class="mecell yes">Yes</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+          <tr><td>Independently audited</td><td class="mecell no">No</td><td class="par">Reviewed</td><td class="yes">Yes</td></tr>
+          <tr><td>Independent implementations</td><td class="mecell no">None yet</td><td class="yes">Several</td><td class="yes">Several</td></tr>
+          <tr><td>Forward secrecy</td><td class="mecell no">No</td><td class="no">No</td><td class="no">No</td></tr>
+          <tr><td>Years of scrutiny</td><td class="mecell par">Months</td><td class="par">Years</td><td class="yes">Decades</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cmp-note">Forward secrecy needs an interactive ratchet — a different kind of tool. If you need it, that is <a href="https://signal.org">Signal</a>, not any of these three.</p>
+  </div>
+</section>
+
+<section id="record">
+  <div class="wrap reveal">
+    <p class="kicker">The record</p>
+    <div class="record-head">
+      <span class="bignum">12</span>
+      <h2>defects found, and fixed.</h2>
+    </div>
+    <p class="section-lede">Eight came from the fuzzer. Three came from reading the code against RFC 9180 and the EdDSA literature. One came from a stranger on Stack Exchange. The worst survived every test and every fuzzing campaign — it was caught only by comparing the construction against published analysis of Ed25519. The list is public because a project that hides its bug history is asking you to trust it blind.</p>
+    <ul class="defects">
+      <li class="worst"><span class="n">#9</span><span><strong>A universal signature forgery.</strong> With the Ed25519 identity point as the signer's key, one fixed signature verified <em>every</em> message — a valid signature from no private key at all.<span class="tag">shipped in 0.1.0 · fixed in 0.2.0 · 0.1.0 withdrawn</span></span></li>
+      <li><span class="n">#1</span><span>The signature did not cover the X25519 half of the sender's identity, so a valid signature could be re-attributed to a different fingerprint. <span class="src">— code review</span></span></li>
+      <li><span class="n">#7</span><span>KDF cost parameters were bounded individually but not by resulting memory: a hostile key file could ask for ~17 TB and turn opening it into a denial of service. <span class="src">— fuzzer</span></span></li>
+      <li><span class="n">#11</span><span>The X25519 shared secret was never checked for the all-zero value that RFC 9180 makes a MUST — safe here only by OpenSSL's grace, and the spec documented the wrong safeguard. <span class="src">— RFC review</span></span></li>
+      <li><span class="n">#12</span><span>The documentation itself overclaimed: it presented key <em>validation</em> as key <em>commitment</em>. Two different properties; only one was present. <span class="src">— outside reviewer</span></span></li>
+    </ul>
+    <p style="margin-top:20px;color:var(--muted);font-size:15px">The full list, with how each was caught, is in the <a href="https://github.com/redradit/crsys#defects-found-so-far">README</a> and <a href="https://github.com/redradit/crsys/blob/main/SECURITY.md">SECURITY.md</a>.</p>
+  </div>
+</section>
+
+<section id="threat">
+  <div class="wrap reveal">
+    <p class="kicker">Threat model</p>
+    <h2>What it does, and does not, protect.</h2>
+    <p class="section-lede">The second column is the one that gets systems broken, so it is not buried. Read it before trusting anything to the first.</p>
+    <div class="threat">
+      <div class="tcol good">
+        <h3>Protects against</h3>
+        <ul>
+          <li><b>Reading the content</b> without the right private key — it would take breaking X25519 or ChaCha20-Poly1305.</li>
+          <li><b>Any modification.</b> The suite flips every bit and truncates at every offset; every case is rejected.</li>
+          <li><b>Truncation and reordering</b> — the chunk counter and a final-chunk flag live in the nonce.</li>
+          <li><b>Re-addressing a signed message</b> — the signature covers the recipient list.</li>
+          <li><b>Identity substitution</b> — a signature is attributed by all 64 bytes of the key, never a short fingerprint.</li>
+          <li><b>KDF downgrade</b> — the cost parameters are authenticated.</li>
+        </ul>
+      </div>
+      <div class="tcol bad">
+        <h3>Does not protect against</h3>
+        <ul>
+          <li><b>Trusting the wrong key.</b> There is no PKI. Verify fingerprints over a separate channel — the one link software cannot close for you.</li>
+          <li><b>A signature from an unknown key.</b> It proves someone signed, not who. Pin the expected signer.</li>
+          <li><b>A compromised endpoint.</b> Keyloggers and malware beat any encryption.</li>
+          <li><b>Later decryption.</b> No forward secrecy: a stolen long-term key opens past messages.</li>
+          <li><b>Quantum computers.</b> X25519 and Ed25519 are not post-quantum.</li>
+          <li><b>Metadata.</b> File size, timing and recipient count stay visible.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="challenge">
+  <div class="wrap reveal">
+    <div class="challenge">
+      <p class="kicker">Wanted: a second implementation</p>
+      <h2>Break the spec, not the code.</h2>
+      <p style="color:var(--muted);max-width:620px;margin:0">The largest gap in this project is that no independent implementation exists, so no ambiguity in the specification has ever been shaken out by anything but the code reading its own mind. That is not a gap the author can close.</p>
+      <ol>
+        <li>Write a decrypter from <a href="https://github.com/redradit/crsys/blob/main/SPEC.md">SPEC.md</a> alone — without reading the Python.</li>
+        <li>Check it against the nine frozen vectors (private keys included, published on purpose).</li>
+        <li>If it disagrees with a vector, or you had to open the source, <strong>the specification is what failed</strong> — and that is the finding worth having.</li>
+      </ol>
+      <a class="btn btn-primary" href="https://github.com/redradit/crsys/blob/main/CHALLENGE.md">Read the challenge →</a>
+    </div>
+  </div>
+</section>
+
+<section id="versions">
+  <div class="wrap reveal">
+    <p class="kicker">Two version numbers, meaning different things</p>
+    <h2>The format almost never moves.</h2>
+    <p class="section-lede">A file you encrypt should still open years from now. So the container format has its own version — currently <strong>1</strong>, and it has never changed — separate from the software's. A new release fixes bugs; it does not strand your files.</p>
+    <div class="versions">
+      <div class="vcard">
+        <span class="vlabel">Software</span>
+        <div class="vnum">0.2.1</div>
+        <p>Moves with every fix and feature. Pre-1.0, and honest about it: interfaces and internals can still change.</p>
+      </div>
+      <div class="vcard">
+        <span class="vlabel">Container format</span>
+        <div class="vnum">1</div>
+        <p>Frozen. Pinned by conformance vectors the test suite checks on every run. A change to the bytes is a new format version, never a quiet patch.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <span class="brand" style="font-size:22px">crsys<span class="dot">.</span></span>
+        <p style="color:var(--muted);font-size:14px;max-width:290px;margin:14px 0 0">Hybrid public-key encryption in Python. A keypair, a CLI, a GUI, and a spec you can hold it to.</p>
+        <div class="warnbar"><span class="d"></span>Not independently audited — read SECURITY.md first.</div>
+      </div>
+      <div class="foot-links">
+        <div class="foot-col">
+          <h4>Project</h4>
+          <a href="https://github.com/redradit/crsys">Repository</a>
+          <a href="https://github.com/redradit/crsys/blob/main/SPEC.md">Specification</a>
+          <a href="https://github.com/redradit/crsys/blob/main/CHANGELOG.md">Changelog</a>
+          <a href="https://github.com/redradit/crsys/releases">Releases</a>
+        </div>
+        <div class="foot-col">
+          <h4>Read first</h4>
+          <a href="https://github.com/redradit/crsys/blob/main/SECURITY.md">Security &amp; threat model</a>
+          <a href="https://github.com/redradit/crsys/blob/main/CHALLENGE.md">The challenge</a>
+          <a href="https://github.com/redradit/crsys/blob/main/CONTRIBUTING.md">Contributing</a>
+          <a href="https://age-encryption.org">Or just use age</a>
+        </div>
+      </div>
+    </div>
+    <p class="foot-note">MIT licensed. Built out of standard primitives, none of them reimplemented here. If you would not want a message attributable to you in front of somebody else, send it unsigned.</p>
+  </div>
+</footer>
+
+<script>
+// ---- theme ----
+(function(){
+  var root=document.documentElement,btn=document.getElementById('themeToggle');
+  try{var s=localStorage.getItem('crsys-theme');if(s)root.setAttribute('data-theme',s);}catch(e){}
+  btn.addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+    var next=cur==='dark'?'light':'dark';root.setAttribute('data-theme',next);
+    try{localStorage.setItem('crsys-theme',next);}catch(e){}
+  });
+})();
+
+// ---- copy ----
+document.querySelectorAll('.copybtn').forEach(function(b){
+  b.addEventListener('click',function(){
+    var el=document.getElementById(b.dataset.copy);
+    navigator.clipboard&&navigator.clipboard.writeText(el.textContent).then(function(){
+      var o=b.textContent;b.textContent='copied';setTimeout(function(){b.textContent=o;},1200);});
+  });
+});
+
+// ---- scroll progress + reveals ----
+(function(){
+  var bar=document.getElementById('progress');
+  function onScroll(){
+    var h=document.documentElement,max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0?(h.scrollTop/max*100):0)+'%';
+  }
+  addEventListener('scroll',onScroll,{passive:true});onScroll();
+  var io=new IntersectionObserver(function(es){
+    es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});
+  },{threshold:.12});
+  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el);});
+  // pipeline flow animation only once it is in view
+  var pipe=document.getElementById('pipe');
+  if(pipe){var po=new IntersectionObserver(function(es){
+    es.forEach(function(e){if(e.isIntersecting)pipe.classList.add('in');});
+  },{threshold:.3});po.observe(pipe);}
+})();
+
+// ---- tabs ----
+document.querySelectorAll('.tab').forEach(function(t){
+  t.addEventListener('click',function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});
+    document.querySelectorAll('.panel').forEach(function(x){x.classList.remove('on');});
+    t.classList.add('on');
+    document.querySelector('.panel[data-panel="'+t.dataset.tab+'"]').classList.add('on');
+    document.getElementById('termTitle').textContent=t.dataset.tab==='cli'?'bash':'python';
+  });
+});
+
+// ---- pipeline connector geometry (spans the row behind the stages) ----
+(function(){
+  var conn=document.getElementById('conn'),pipe=document.getElementById('pipe');
+  function place(){
+    if(!conn||getComputedStyle(conn).display==='none')return;
+    var stages=pipe.querySelectorAll('.stage');
+    if(stages.length<2)return;
+    var first=stages[0].getBoundingClientRect(),last=stages[stages.length-1].getBoundingClientRect();
+    var base=pipe.getBoundingClientRect();
+    conn.style.left=(first.right-base.left)+'px';
+    conn.style.width=(last.left-first.right)+'px';
+  }
+  addEventListener('resize',place);setTimeout(place,80);place();
+})();
+
+// ---- container inspector: decodes the REAL embedded container ----
+(function(){
+  var B64="Q1JTWQEBAQAAAQAA8o3esqAjgbzVNSf/5BLk4hsiqg6WHnPrAqPvu68trpkAAVGXvLfvEfrmQL9W"+
+          "lCEuAIPfPW+oVsZU8iYOAWh1IMEwrVPSR28JtyvTGLy8TtTN5Xtj5a5ftJoB64EZthl7XKpRW8l1"+
+          "LjdkZw92wRDziZlMP+1xOjnVKK8AAAAevA4TzpsKy7JIWRNizjJ0YcadT70475/AjS/HiRjpAAAA"+
+          "kKwN5W4TdPbEDXtP94rNG5dH7ZxDvCuNCer+TnJklErtG2U9BFRsu0U/o9lnMY6gpV9mgJxVvzgA"+
+          "1NNLodRNMMZv1IfZrXx6mszWlOY4U+bX/QhhGJay4a1RywtFOawlpkF/ZMtOYQ+7P6bUSKcqGt4+"+
+          "s8btQZexVZNvkmiq+87CgAsg/r+GG/lppKPfSQENtg==";
+  var bin=atob(B64),bytes=[];for(var i=0;i<46;i++)bytes.push(bin.charCodeAt(i));
+  function hex(a,b){var s="";for(var i=a;i<b;i++){var h=bytes[i].toString(16);s+=(h.length<2?"0":"")+h+" ";}return s.trim();}
+  var FIELDS=[
+    {s:0,l:4,c:"f-magic",name:"Magic",off:"bytes 0–3",text:"The four bytes CRSY. They mark the file as a CRSYS container and nothing else. The missing S is not an acronym — the name just does not stand for anything.",val:function(){return '"'+bin.slice(0,4)+'"  ·  '+hex(0,4);}},
+    {s:4,l:1,c:"f-version",name:"Format version",off:"byte 4",text:"The container format version. It is 1, and it has never changed — a file from the first release still opens today.",val:function(){return "1";}},
+    {s:5,l:1,c:"f-suite",name:"Cipher suite",off:"byte 5",text:"Which AEAD sealed the payload. 1 is ChaCha20-Poly1305 (the default), 2 is AES-256-GCM.",val:function(){return "1 — ChaCha20-Poly1305";}},
+    {s:6,l:1,c:"f-flags",name:"Flags",off:"byte 6",text:"Bit 0 marks the message as signed. Here it is set, so a trailer carries the sender's public key and an Ed25519 signature over everything above.",val:function(){return "0x01 — SIGNED";}},
+    {s:7,l:1,c:"f-reserved",name:"Reserved",off:"byte 7",text:"Must be zero. A byte kept aside for a future the format has not needed yet — and rejected if it is anything else, so it cannot be smuggled through.",val:function(){return "0";}},
+    {s:8,l:4,c:"f-chunk",name:"Chunk size",off:"bytes 8–11",text:"The payload is sealed in fixed-size chunks so a huge file never has to fit in memory. This one uses 65536-byte chunks. Big-endian uint32.",val:function(){return "65536 bytes";}},
+    {s:12,l:32,c:"f-commit",name:"Content-key commitment",off:"bytes 12–43",text:"A hash tying every recipient's envelope to the same content key, closing the multi-recipient case of the invisible-salamanders attack. Authenticated as part of the header.",val:function(){return hex(12,44);}},
+    {s:44,l:2,c:"f-count",name:"Recipient count",off:"bytes 44–45",text:"How many sealed envelopes follow the header — one per recipient, 88 bytes each. Here, one.",val:function(){return "1 recipient";}}
+  ];
+  function fieldAt(i){for(var k=0;k<FIELDS.length;k++){if(i>=FIELDS[k].s&&i<FIELDS[k].s+FIELDS[k].l)return FIELDS[k];}return null;}
+  var grid=document.getElementById('byteGrid'),detail=document.getElementById('byteDetail');
+  bytes.forEach(function(b,i){
+    var f=fieldAt(i),d=document.createElement('div');d.className='byte '+(f?f.c:'');
+    var h=b.toString(16);d.textContent=(h.length<2?'0':'')+h;d.setAttribute('data-i',i);
+    d.addEventListener('click',function(){selectField(f);});grid.appendChild(d);
+  });
+  function selectField(f){
+    if(!f)return;
+    document.querySelectorAll('.byte').forEach(function(x){var i=+x.getAttribute('data-i');x.classList.toggle('active',i>=f.s&&i<f.s+f.l);});
+    detail.innerHTML='<p class="dfield">'+f.name+'</p><p class="doff">'+f.off+'</p><p class="dtext">'+f.text+'</p><div class="dval">'+f.val()+'</div>';
+  }
+  var legend=document.getElementById('legend');
+  FIELDS.forEach(function(f){var s=document.createElement('span');s.className=f.c;s.textContent=f.name;legend.appendChild(s);});
+
+  // region map -> narrative in the same detail panel
+  var REGIONS={
+    header:{name:"Header · 46 bytes",off:"cleartext, but authenticated",text:"The fixed part every container starts with: magic, version, suite, flags, chunk size, the content-key commitment, and how many recipients follow. Pick a byte below to break it down.",val:function(){return "click a byte ↓";}},
+    env:{name:"Envelope · 88 bytes each",off:"one per recipient",text:"A sealed copy of the content key for one recipient: their 8-byte fingerprint, a 32-byte ephemeral public key, and the 48-byte wrapped key. This message has one recipient, so one envelope.",val:function(){return "8 + 32 + 48 bytes";}},
+    pay:{name:"Payload chunks",off:"length-prefixed, AEAD-sealed",text:"The message itself, in fixed-size chunks. Each carries its own authentication tag over the header, so no chunk can be moved, dropped, or altered without detection.",val:function(){return "≤ 65536 bytes per chunk";}},
+    trail:{name:"Signature trailer · 128 bytes",off:"present because this message is signed",text:"The sender's 64-byte public key and a 64-byte Ed25519 signature over the header, the recipient list and a hash of the plaintext. Absent entirely on unsigned messages.",val:function(){return "64-byte key + 64-byte signature";}}
+  };
+  var segs=document.querySelectorAll('.seg');
+  segs.forEach(function(seg){
+    seg.addEventListener('click',function(){
+      segs.forEach(function(s){s.classList.remove('on');});seg.classList.add('on');
+      var r=REGIONS[seg.dataset.region];
+      detail.innerHTML='<p class="dfield">'+r.name+'</p><p class="doff">'+r.off+'</p><p class="dtext">'+r.text+'</p><div class="dval">'+r.val()+'</div>';
+      document.querySelectorAll('.byte.active').forEach(function(x){x.classList.remove('active');});
+    });
+  });
+  // default view
+  selectField(FIELDS[0]);
+})();
+
+// ---- hero ambient canvas: drifting hex, faint, the only bold motion ----
+(function(){
+  var c=document.getElementById('heroCanvas');if(!c)return;
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  var ctx=c.getContext('2d'),W,H,cols,drops,fs=14;
+  var glyphs="0123456789abcdef";
+  function size(){
+    var r=c.parentElement.getBoundingClientRect();
+    W=c.width=r.width;H=c.height=r.height;
+    cols=Math.floor(W/(fs*1.4));drops=[];
+    for(var i=0;i<cols;i++)drops[i]=Math.random()*-H;
+  }
+  size();addEventListener('resize',size);
+  function accent(){return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#6366f1';}
+  var last=0;
+  function frame(t){
+    if(t-last>66){ // ~15fps, deliberately slow and cheap
+      last=t;
+      ctx.clearRect(0,0,W,H);
+      ctx.font=fs+'px ui-monospace,monospace';
+      for(var i=0;i<cols;i++){
+        var x=i*fs*1.4+2,y=drops[i];
+        for(var k=0;k<3;k++){
+          var yy=y-k*fs*1.4;if(yy<0||yy>H)continue;
+          ctx.fillStyle=k===0?accent():'rgba(127,131,160,'+(0.22-k*0.07)+')';
+          ctx.globalAlpha=k===0?0.5:1;
+          ctx.fillText(glyphs[(Math.floor(yy/fs)+i)%16],x,yy);
+        }
+        drops[i]+=fs*1.4;
+        if(drops[i]>H+fs*4)drops[i]=Math.random()*-H*0.4;
+      }
+      ctx.globalAlpha=1;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
