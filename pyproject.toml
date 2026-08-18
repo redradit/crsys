@@ -27,7 +27,7 @@ argon2 = ["argon2-cffi>=23.1"]
 # Pinned exactly. A linter that floats can turn a green build red with no code
 # change, and this project has already spent three CI runs on a signal it could
 # not trust. Bumping these is a commit, with the new findings in the diff.
-dev = ["ruff==0.16.2", "mypy==2.3.0"]
+dev = ["ruff==0.16.3", "mypy==2.3.0"]
 
 [project.scripts]
 crsys = "crsys.cli:main"
